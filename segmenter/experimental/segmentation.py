@@ -1,12 +1,17 @@
 import io
-import cv2
-import numpy as np
 from pathlib import Path
 from posixpath import join
 from statistics import median
+
+import cv2
+import numpy as np
+from PIL import Image, ImageDraw
 from matplotlib import pyplot as plt
+from scipy.signal import find_peaks
 from skimage.filters import threshold_otsu
-from PIL import Image
+
+from segmenter.image_util import data_dir, resize_img
+from segmenter.util import preprocess, consecutive
 
 
 def show_cv2_image(images, names, wait_for_input=True):
@@ -204,7 +209,30 @@ def segment_measures(pages):
         # img.save('segmented_page_v2_{}.png'.format(page))
 
 
+def detect_peaks(image):
+    image = preprocess_2(image)
+    hor_hist, vert_hist, hthres, vthres = calculate_intensity_histograms(image)
+    hor_data, vert_data = plot_intensity_histograms(image, hor_hist, hthres, vert_hist, vthres)
+    show_img_with_hist(image, hor_data, vert_data, 'intensity_hists_{}'.format(page))
+    profile = image.sum(axis=0) / 255
+    peaks, props = find_peaks(profile,  distance=200, prominence=500)
+    peaks = peaks / image.shape[1]
+    image = resize_img(image)
+    for peak in peaks:
+        draw = ImageDraw.Draw(image)
+        draw.line((peak * image.size[0], 0, peak * image.size[0], image.size[1]), fill='red')
+        del draw
+    image.show()
+
+
+def detect_systems(image):
+    profile = image.sum(axis=1) / 255
+    zeros = np.diff(profile == 0).nonzero()[0]
+
+
 if __name__ == "__main__":
-    pages = [0]
-    # display_measures(pages)
-    segment_measures(pages)
+    pages = [1, 76]
+    for page in pages:
+        img = Image.open(join(data_dir, 'ppm-600/transcript-{}.png'.format(page)))
+        img = preprocess(np.asarray(img))
+        detect_systems(img)

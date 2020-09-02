@@ -1,12 +1,9 @@
 import math
 
-from PIL import Image
 from scipy import ndimage
 
 import cv2
 import numpy as np
-
-from segmenter.image_util import resize_img
 
 
 def consecutive(data, stepsize=1):

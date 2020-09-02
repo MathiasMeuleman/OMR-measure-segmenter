@@ -13,7 +13,7 @@ np.set_printoptions(linewidth=sys.maxsize)
 ############################################
 # CLASSES
 # These are just for convenience, namedtuples are essentially just tuples but with named fields
-Line = namedtuple("Line", ["top", "bottom", "start", "end", "v_profile", "h_profile"])
+System = namedtuple("System", ["top", "bottom", "start", "end", "v_profile", "h_profile"])
 Measure = namedtuple("Measure", ["start", "end", "line"])
 
 
@@ -113,7 +113,7 @@ def find_score_lines(img, plot=False):
             b_corr = np.max(np.where(current*scale > 0.85))
             
             # Here we just create a line instance, we also store the vertical and horizontal mean profiles, as they are useful for post-processing
-            line = Line(
+            line = System(
                 top = t_corr,
                 bottom = b_corr,
                 start = l,
