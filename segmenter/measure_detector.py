@@ -210,7 +210,7 @@ def get_sorted_page_paths(page_path):
 # PROGRAM
 
 # This is just the program using all the methods above. If you were to put this in a python script, this is the part that would be executed in the main method
-page_path = r"/data/test"
+page_path = r"../tmp/test"
 paths = get_sorted_page_paths(page_path)
 
 first_page = find_first_page(paths)
