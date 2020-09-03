@@ -81,13 +81,12 @@ def find_first_page(paths):
 # This method will find the systems in the score.
 # Note that "system" here indicates a sequential element: some orchestral scores have two separate sections on a page that are not sequential, this method will not produce the correct results in that case!
 # To fully adapt this to orchestral scores, you can probably make the assumption that there is just a single line per page, and work from there.
-def find_score_systems(img, plot=False):
-    # Height/Width of image
+def find_systems_in_score(img, plot=False):
     h, w = np.shape(img)
 
     # Here we will use binary-propagation to fill the systems, making them fully solid. We can then use the mean across the horizontal axis to find where there is "mass" on the vertical axis.
     img_solid = im.binary_fill_holes(img)                                   # Binary propagation, which usually fills up the systems (if they have no holes)
-    mean_solid_systems = np.mean(img_solid, axis=1)                           # Thresholded horizontal mean after solidification, this gives a 1D image
+    mean_solid_systems = np.mean(img_solid, axis=1)                         # Thresholded horizontal mean after solidification, this gives a 1D image
     labels, count = im.measurements.label(im.binary_opening(mean_solid_systems > 0.2, iterations=int(w / 137.25)))  # This is a threshold, opening and label operation in one system. Note that we are actually labelling a 1D image here!
 
     systems = []
@@ -95,7 +94,7 @@ def find_score_systems(img, plot=False):
         # Using our labels we can mask out the area of interest on the vertical slice
         mask = (labels == i)
         current = mask * mean_solid_systems
-        
+
         # Find top and bottom of system (wherever the value is first non-zero)
         # We need rough values for these first to determine the left and right bounds of the system, we will correct them later to tighter values
         t = np.min(np.where(current > 0))
@@ -113,15 +112,14 @@ def find_score_systems(img, plot=False):
         try:
             t_corr = np.min(np.where(current*scale > 0.85))
             b_corr = np.max(np.where(current*scale > 0.85))
-            
-            # Here we just create a system instance, we also store the vertical and horizontal mean profiles, as they are useful for post-processing
+
             system = System(
                 top=t_corr,
                 bottom=b_corr,
                 start=l,
                 end=r,
-                v_profile=current,
-                h_profile=np.mean(img[t:b, :], axis=0)
+                v_profile=np.mean(img[t:b, l:r], axis=1),
+                h_profile=np.mean(img[t:b, l:r], axis=0)
             )
             systems.append(system)
         except:
@@ -158,18 +156,23 @@ def find_blocks_in_system(img, system, plot=False):
             peaks.append(t_peak)
     block_splits = sorted(peaks)
 
-    # So this part needs to be revised: The system ending point is used as the final block split if the last detected block is too far from the system's ending, but this is incorrect.
+    # Some plumbing to make sure the splits align correctly
     if block_splits:
-        # Possibly just commenting this if-statement is enough to get rid of the above problem
-        if system.end - block_splits[-1] > min_block_width:
-            block_splits.append(system.end)
-        # This if-statement is meant for catching the cases where we don't find the first block split (at the very start) properly, which is usually thicker than the others
-        if block_splits[0] - system.start > min_block_width:
-            block_splits = [system.start] + block_splits
-    # This else is really a fail-safe: if we did not find any blocks at all, we just assume the entire system is a single block, with just a start/end point equal to the system start/end
+        # Add start and end of system to splits. If these are close to the first and last actual splits, the access blocks will be removed later in `discard_sparse_blocks`
+        if block_splits[0] > 0:
+            block_splits.insert(0, 0)
+        if block_splits[-1] < system.end - system.start:
+            block_splits.append(system.end - system.start)
+    #     # If the first split is too close to the start of the system, the first split should start at the system start
+    #     if block_splits[0] - system.start < min_block_width:
+    #         block_splits[0] = 0
+    #     # If the last split is too close to the end of the system, the last split should end at the system end
+    #     if system.end - block_splits[-1] < min_block_width:
+    #         block_splits[-1] = system.end - system.start
+    # # This else is really a fail-safe: if we did not find any blocks at all, we just assume the entire system is a single block, with just a start/end point equal to the system start/end
     else:
         block_splits += [system.start, system.end]
-    
+
     blocks = []
     for i in range(len(block_splits) - 1):
         blocks.append(Block(block_splits[i], block_splits[i + 1], system))
@@ -181,16 +184,15 @@ def discard_thin_systems(systems):
     heights = [abs(system.top - system.bottom) for system in systems]
     return [system for system in systems if abs(system.top - system.bottom) > 0.5 * max(heights)]
 
+
 # Here we discard detected blocks that are too sparse. This may be a bit sketchy, as it looks at image density, so it could accidentally discard actual score elements that are just empty.
 # It is mainly intended to remove elements before or after systems that are not blocks, such as textual elements, in case left/right bound detection of lines messed up.
-def discard_sparse_blocks(blocks, img):
+def discard_sparse_blocks(img, blocks):
     new_blocks = []
-    densities = []
     for block in blocks:
-        snip = img[block.system.top:block.system.bottom, block.start:block.end]
+        snip = img[block.system.top:block.system.bottom, block.system.start + block.start:block.system.start + block.end]
         snip = im.sobel(snip, axis=0) > 0.5
         density = np.sum(snip)/np.size(snip)
-        densities.append(density)
         if density > 0.07:
             new_blocks.append(block)
     return new_blocks
@@ -202,33 +204,33 @@ def get_sorted_page_paths(page_path):
     return [str(p.resolve()) for p in sorted(paths, key=lambda p: int(str(p.stem).split("-")[1]))]
 
 
-############################################
-# PROGRAM
+def main():
+    page_path = r"../tmp/test"
+    paths = get_sorted_page_paths(page_path)
 
-# This is just the program using all the methods above. If you were to put this in a python script, this is the part that would be executed in the main method
-page_path = r"../tmp/test"
-paths = get_sorted_page_paths(page_path)
+    first_page = find_first_page(paths)
+    print(f"Scores start at page {paths[first_page]}")
+    for i in range(first_page, len(paths)):
+        path = paths[i]
+        print(f"Processing page {i+1} ({path})")
+        img = open_and_preprocess(path)
+        systems = find_systems_in_score(img)
+        # lines = discard_thin_lines(lines)
+        all_blocks = []
+        for system in systems:
+            blocks = find_blocks_in_system(img, system)
+            all_blocks += blocks
+        all_blocks = discard_sparse_blocks(img, all_blocks)
+        # find_measures_in_system(img, systems[0], all_blocks)
 
-first_page = find_first_page(paths)
-print(f"Scores start at page {paths[first_page]}")
-for i in range(first_page, len(paths)):
-    path = paths[i]
-    print(f"Processing page {i+1} ({path})")
-    img = open_and_preprocess(path)
-    systems = find_score_systems(img)
-    # lines = discard_thin_lines(lines)
-    all_blocks = []
-    for system in systems:
-        blocks = find_blocks_in_system(img, system)
-        all_blocks += blocks
-    for block in all_blocks:
-        print(block[0:2])
-    all_blocks = discard_sparse_blocks(all_blocks, img)
+        # This creates plots of the score pages, with block highlighting
+        plt.figure(figsize=(20, 20))
+        plt.imshow(img, cmap='gray', vmin=0, vmax=1)
+        for block in all_blocks:
+            rect = patches.Rectangle((block.system.start + block.start, block.system.top), block.end - block.start, block.system.bottom - block.system.top, linewidth=10, edgecolor='r', facecolor='r', alpha=0.2)
+            plt.gca().add_patch(rect)
+        plt.show()
 
-    # This creates plots of the score pages, with block highlighting
-    plt.figure(figsize=(20, 20))
-    plt.imshow(img, cmap='gray', vmin=0, vmax=1)
-    for block in all_blocks:
-        rect = patches.Rectangle((block.start, block.system.top), block.end - block.start, block.system.bottom - block.system.top, linewidth=10, edgecolor='r', facecolor='r', alpha=0.2)
-        plt.gca().add_patch(rect)
-    plt.show()
+
+if __name__ == "__main__":
+    main()
