@@ -1,4 +1,4 @@
-from PIL import Image, ImageOps
+from PIL import Image, ImageDraw, ImageOps
 from collections import namedtuple
 from matplotlib import patches
 from pathlib import Path
@@ -107,25 +107,16 @@ def find_systems_in_score(img, plot=False):
         l = np.min(np.where(solid_h_profile))
         r = np.max(np.where(solid_h_profile))
         
-        # Here we correct the top and bottom values to tighter bounds (the score systems themselves to be precise, without the notes sticking out)
-        scale = w/abs(r-l)  # This scale value is used to filter out rubbish that is too short to be a system. Probably it is better to do this in post-processing entirely though... Feel free to remove?
-        try:
-            t_corr = np.min(np.where(current*scale > 0.85))
-            b_corr = np.max(np.where(current*scale > 0.85))
+        system = System(
+            top=t,
+            bottom=b,
+            start=l,
+            end=r,
+            v_profile=np.mean(img[t:b, l:r], axis=1),
+            h_profile=np.mean(img[t:b, l:r], axis=0)
+        )
+        systems.append(system)
 
-            system = System(
-                top=t_corr,
-                bottom=b_corr,
-                start=l,
-                end=r,
-                v_profile=np.mean(img[t_corr:b_corr, l:r], axis=1),
-                h_profile=np.mean(img[t_corr:b_corr, l:r], axis=0)
-            )
-            systems.append(system)
-        except:
-            # Just a place-holder to indicate that we don't care when a system does not get detected (just so that it continues)
-            print("Can't find top and bottom bounds within threshold for system ", i)
-        
     # Plotting code, plots some of the intermediate images that are used, enable by setting the "plot" keyword to True in the method call
     if plot:
         plt.figure()
@@ -236,8 +227,47 @@ def get_sorted_page_paths(page_path):
     return [str(p.resolve()) for p in sorted(paths, key=lambda p: int(str(p.stem).split("-")[1]))]
 
 
+def plot_measures(img, measures):
+    plt.figure(figsize=(20, 20))
+    plt.imshow(img, cmap='gray', vmin=0, vmax=1)
+    for measure in measures:
+        start = (measure.block.system.start + measure.block.start, measure.block.system.top + measure.top)
+        rect = patches.Rectangle(start, measure.block.end - measure.block.start, measure.bottom - measure.top,
+                                 linewidth=6, edgecolor='r', facecolor='r', alpha=0.2)
+        plt.gca().add_patch(rect)
+    plt.show()
+
+
+def create_img_with_measure(path, measures):
+    max_height = 950
+    img = Image.open(path)
+    for measure in measures:
+        draw = ImageDraw.Draw(img)
+        start = (measure.block.system.start + measure.block.start, measure.block.system.top + measure.top)
+        end = (start[0] + (measure.block.end - measure.block.start), start[1] + (measure.bottom - measure.top))
+        draw.rectangle((start, end), outline='red', fill=None, width=5)
+        del draw
+    scale = max_height / img.size[1]
+    img = img.resize((int(img.size[0] * scale), int(img.size[1] * scale)), Image.ANTIALIAS)
+    return img
+
+
+def show_measures(path, measures):
+    img = create_img_with_measure(path, measures)
+    img.show()
+
+
+def save_measure_img(path, measures, name):
+    img = create_img_with_measure(path, measures)
+    img.save(name, "PNG")
+
+
 def main():
     page_path = r"../tmp/test"
+    plot = False
+    show = False
+    save = True
+
     paths = get_sorted_page_paths(page_path)
 
     first_page = find_first_page(paths)
@@ -255,14 +285,12 @@ def main():
             measures = find_measures_in_system(img, system, blocks)
             all_measures += measures
 
-        # This creates plots of the score pages, with block highlighting
-        plt.figure(figsize=(20, 20))
-        plt.imshow(img, cmap='gray', vmin=0, vmax=1)
-        for measure in all_measures:
-            start = (measure.block.system.start + measure.block.start, measure.block.system.top + measure.top)
-            rect = patches.Rectangle(start, measure.block.end - measure.block.start, measure.bottom - measure.top, linewidth=6, edgecolor='r', facecolor='r', alpha=0.2)
-            plt.gca().add_patch(rect)
-        plt.show()
+        if plot:
+            plot_measures(img, all_measures)
+        if show:
+            show_measures(path, all_measures)
+        if save:
+            save_measure_img(path, all_measures, str((Path(r"../tmp/output") / path.split("/")[-1]).resolve()))
 
 
 if __name__ == "__main__":
