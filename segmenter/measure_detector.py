@@ -170,32 +170,27 @@ def find_blocks_in_system(img, system, plot=False):
     return blocks
 
 
-def find_measures_in_block_intersect(img, system, block, peaks, midpoints):
-    measures = []
-    # Slice out the profile for this block only
-    block_profile = np.mean(img[system.top:system.bottom, system.start + block.start:system.start + block.end], axis=1)
-    # The measure splits are relative to the current block, start with 0 to include the top
-    measure_splits = [0]
-    for i, midpoint in enumerate(midpoints):
-        # Slice out the profile between two peaks (the part in between bars)
-        region_profile = block_profile[peaks[i]:peaks[i + 1]]
+def find_measure_split_intersect(peak, midpoint, profile):
+    # The split is made at a point of low mass (so as few intersections with mass as possible).
+    # A small margin is allowed, to find a balans between cutting in the middle and cutting through less mass.
+    region_min = np.min(profile)
+    boundary_candidates = np.where(profile <= region_min * 1.25)[0]
+    # Use index closest to the original midpoint, to bias towards the center between two bars
+    measure_split = boundary_candidates[(np.abs(boundary_candidates - (midpoint - peak))).argmin()]
+    return peak + measure_split
 
-        # The split is made at a point of low mass (so as few intersections with mass as possible).
-        # A small margin is allowed, to find a balans between cutting in the middle and cutting through less mass.
-        region_min = np.min(region_profile)
-        boundary_candidates = np.where(region_profile <= region_min * 1.25)[0]
-        # Use index closest to the original midpoint, to bias towards the center between two bars
-        measure_split = boundary_candidates[(np.abs(boundary_candidates - (midpoint - peaks[i]))).argmin()]
-        measure_splits.append(peaks[i] + measure_split)
-    measure_splits.append(system.bottom - system.top)
 
-    for i in range(len(measure_splits) - 1):
-        measures.append(Measure(measure_splits[i], measure_splits[i + 1], block))
-    return measures
+def find_measure_split_region(peak, profile, plot=False):
+    # Find the longest region with intensities below a certain threshold
+    region_splits = np.where(np.diff(profile < 0.05) == 1)[0]
+    region_idx = (region_splits[1:] - region_splits[:-1]).argmax()
+    # Split the measures at the middle of the retrieved region
+    measure_split = int(np.mean([region_splits[region_idx], region_splits[region_idx + 1]]))
+    return peak + measure_split
 
 
 # TODO: See if splitting through middle of largest stretch of (almost) no mass works better.
-def find_measures_in_system(img, system, blocks):
+def find_measures_in_system(img, system, blocks, method='intersect'):
     h, w = np.shape(img)
     min_measure_dist = int(h / 30)
 
@@ -203,9 +198,22 @@ def find_measures_in_system(img, system, blocks):
     peaks = sig.find_peaks(system.v_profile, distance=min_measure_dist, height=0.2, prominence=0.2)[0]  # Find peaks in vertical profile, which indicate the bar lines.
     midpoints = np.asarray(peaks[:-1] + np.round(np.diff(peaks) / 2), dtype='int')  # Get the midpoints between the detected bar lines, which will be used as the starting point for getting the Measures.
     measures = []
-    for block in blocks:
-        block_measures = find_measures_in_block_intersect(img, system, block, peaks, midpoints)
-        measures.extend(block_measures)
+    for j, block in enumerate(blocks):
+        # Slice out the profile for this block only
+        block_profile = np.mean(img[system.top:system.bottom, system.start + block.start:system.start + block.end], axis=1)
+        # The measure splits are relative to the current block, start with 0 to include the top
+        measure_splits = [0]
+        for i in range(len(peaks) - 1):
+            # Slice out the profile between two peaks (the part in between bars)
+            region_profile = block_profile[peaks[i]:peaks[i + 1]]
+            if method == 'intersect':
+                measure_splits.append(find_measure_split_intersect(peaks[i], midpoints[i], region_profile))
+            elif method == 'region':
+                measure_splits.append(find_measure_split_region(peaks[i], region_profile, plot=j < 1))
+        measure_splits.append(system.bottom - system.top)
+
+        for i in range(len(measure_splits) - 1):
+            measures.append(Measure(measure_splits[i], measure_splits[i + 1], block))
     return measures
 
 
