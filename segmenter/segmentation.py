@@ -6,7 +6,7 @@ import numpy as np
 import tensorflow as tf
 from PIL import Image
 
-from segmenter.image_util import data_dir, overlay_segments
+from segmenter.image_util import data_dir, overlay_segments, root_dir
 from segmenter.util import consecutive, compare_measure_bounding_boxes, preprocess
 
 warnings.filterwarnings('ignore')
@@ -20,7 +20,7 @@ def initialize_graph():
     detection_graph = tf.Graph()
     detection_graph.as_default()
     od_graph_def = tf.GraphDef()
-    with tf.gfile.GFile('model.pb', 'rb') as fid:
+    with tf.gfile.GFile('segmenter/model.pb', 'rb') as fid:
         serialized_graph = fid.read()
         od_graph_def.ParseFromString(serialized_graph)
         tf.import_graph_def(od_graph_def, name='')
@@ -140,8 +140,8 @@ def segment_image(image: np.array):
             break
 
     measures.sort(key=cmp_to_key(compare_measure_bounding_boxes))
-    measures = filter_overlapping_segments(measures)
-    measures = slice_horizontal(image, measures)
+    # measures = filter_overlapping_segments(measures)
+    # measures = slice_horizontal(image, measures)
 
     return {'measures': measures}
 
@@ -160,23 +160,24 @@ def measures_to_numpy(measures):
     return measures_np
 
 
-def segment(page):
+def segment(page, img_source_dir=join(data_dir, 'ppm-600'), measure_output_dir=join(data_dir, 'ppm-600-segments')):
     """
     Segments a given page into measures. The individual measure boundaries are stored in a npz file
-    :param page:
     :return:
     """
-    path = join(data_dir, 'ppm-600/transcript-{}.png'.format(page))
+    path = join(img_source_dir, 'transcript-{}.png'.format(page))
     image = Image.open(path)
     segmented = segment_image(np.asarray(image))
     measures = measures_to_numpy(segmented['measures'])
-    np.save(join(data_dir, 'ppm-600-segments/transcript-{}.npy'.format(page)), measures)
+    np.save(join(measure_output_dir, 'transcript-{}.npy'.format(page)), measures)
 
 
 def main():
-    for page in range(1, 2):
-        segment(page)
-        overlay_segments(page)
+    img_dir = join(data_dir, 'Mahler_Symphony_1/ppm-600')
+    measure_dir = join(root_dir, 'tmp/Mahler_Symphony_1/ppm-600-segments')
+    for page in range(1, 30):
+        segment(page, img_source_dir=img_dir, measure_output_dir=measure_dir)
+        overlay_segments(page, img_source_dir=img_dir, measures_source_dir=measure_dir)
 
 
 if __name__ == "__main__":
