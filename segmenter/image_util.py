@@ -4,7 +4,8 @@ from posixpath import join
 import numpy as np
 from PIL import Image, ImageDraw
 
-data_dir = join(Path(__file__).parent.parent.absolute(), 'data')
+root_dir = Path(__file__).parent.parent.absolute()
+data_dir = join(root_dir, 'data')
 
 
 def overlay_segments(page, img_source_dir=join(data_dir, 'ppm-600'), measures_source_dir=join(data_dir, 'ppm-600-segments')):
@@ -16,7 +17,7 @@ def overlay_segments(page, img_source_dir=join(data_dir, 'ppm-600'), measures_so
         ulx, uly, lrx, lry = measure
         draw.rectangle([ulx * image.size[0], uly * image.size[1], lrx * image.size[0], lry * image.size[1]], outline='red', fill=None)
         del draw
-    image.show()
+    image.save(join(root_dir, 'tmp/Mahler_Symphony_1/CNN-segmented-img/page-{}.png'.format(page)))
 
 
 def split_image(page, img_source_dir=join(data_dir, 'ppm-600'), measures_source_dir=join(data_dir, 'ppm-600-segments'), save_dir=join(data_dir, 'ppm-600-measures')):

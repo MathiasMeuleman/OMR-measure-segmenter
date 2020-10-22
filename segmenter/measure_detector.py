@@ -1,12 +1,14 @@
-from PIL import Image, ImageDraw, ImageOps
+import sys
 from collections import namedtuple
-from matplotlib import patches
 from pathlib import Path
+
 import matplotlib.pyplot as plt
 import numpy as np
-import scipy.signal as sig
 import scipy.ndimage as im
-import sys
+import scipy.signal as sig
+from PIL import Image, ImageDraw, ImageOps
+from matplotlib import patches
+
 np.set_printoptions(threshold=sys.maxsize)
 np.set_printoptions(linewidth=sys.maxsize)
 
@@ -22,12 +24,11 @@ Measure = namedtuple("Measure", ["top", "bottom", "block"])
 
 # This method does some pre-processing on the pages
 def open_and_preprocess(path):
-    img = Image.fromarray(plt.imread(path)[:, :, 0]).convert('L')  # Convert to "luminance" (single-channel greyscale)
-    img = ImageOps.autocontrast(img)                             # Does some automatic histogram stretching to enhance contrast
+    original = Image.fromarray(plt.imread(path)[:, :, 0]).convert('L')  # Convert to "luminance" (single-channel greyscale)
+    img = ImageOps.autocontrast(original)                             # Does some automatic histogram stretching to enhance contrast
     img = ImageOps.invert(img)                                   # Inverts the image so we get white on black
     img = img.point(lambda x: x > 50)                           # Threshold on value 50, this will convert the range into [0, 1] (floats though!)
-    
-    return np.array(img) # float (range 0-1) single-channel image
+    return np.asarray(img)
 
 
 # This method will determine whether the given page image contains scores, it is used for finding the first page in a score PDF in case it has a title-page etc.
@@ -96,28 +97,19 @@ def find_systems_in_score(img, plot=False):
         current = mask * mean_solid_systems
 
         # Find top and bottom of system (wherever the value is first non-zero)
-        # We need rough values for these first to determine the left and right bounds of the system, we will correct them later to tighter values
         t = np.min(np.where(current > 0))
         b = np.max(np.where(current > 0))
-        
-        # Taking these vertical bounds from the 2D image, we obtain a cut-out version of a system by slicing.
-        # Then looking at the horizontal profile (so averaged over the vertical axis), we get a 1D image which we can use for left and right starting points
-        snip = img_solid[t:b, :]
-        solid_h_profile = np.mean(snip, axis=0) > 0.1
-        l = np.min(np.where(solid_h_profile))
-        r = np.max(np.where(solid_h_profile))
-        
+
         system = System(
             top=t,
             bottom=b,
-            start=l,
-            end=r,
-            v_profile=np.mean(img[t:b, l:r], axis=1),
-            h_profile=np.mean(img[t:b, l:r], axis=0)
+            start=0,
+            end=w,
+            v_profile=np.mean(img[t:b, :], axis=1),
+            h_profile=np.mean(img[t:b, :], axis=0)
         )
         systems.append(system)
 
-    # Plotting code, plots some of the intermediate images that are used, enable by setting the "plot" keyword to True in the method call
     if plot:
         plt.figure()
         plt.plot(labels)
@@ -125,19 +117,34 @@ def find_systems_in_score(img, plot=False):
         for system in systems:
             plt.plot(system.top, 0, '|', color='green', markersize=15)
             plt.plot(system.bottom, 0, '|', color='red', markersize=15)
+        plt.show()
     
     return systems
-        
+
+
+def modified_zscore(data):
+    """
+    Calculate the modified z-score of a 1 dimensional numpy array
+    Reference:
+        Boris Iglewicz and David Hoaglin (1993), "Volume 16: How to Detect and
+        Handle Outliers", The ASQC Basic References in Quality Control:
+        Statistical Techniques, Edward F. Mykytka, Ph.D., Editor.
+    """
+    median = np.median(data)
+    deviation = data - median
+    mad = np.median(np.abs(deviation))
+    return 0.6745 * deviation / mad
+
 
 # Here we do some fancy peak detection to detect all the systems. Check scipi docs for info on find_peaks, the chosen parameters I found seem to work best.
 # It is better to make this a bit more sensitive and then filter out bad blocks in a post-processing step, by walking along the system (currently the method does this).
 def find_blocks_in_system(img, system, plot=False):
     h, w = np.shape(img)
-    # TODO: Verify what the actual minimum possible width for a block is
-    min_block_width = int(w / 55)
-    sy = im.gaussian_filter(im.sobel(img[system.top:system.bottom, :], axis=1, mode='nearest'), 2)                                                               # Obtain vertical edges via sobel filter
+    # This definition assumes a maximum amount of 20 measures per system, spread out with equal distance.
+    min_block_width = int(w / 20)
+    min_heigth = np.mean(system.h_profile) + 2*np.std(system.h_profile)
     # TODO: Maybe we can do this in 1 go?
-    m_peaks = sig.find_peaks(system.h_profile, distance=min_block_width, height=0.4, prominence=0.3, wlen=int(w / 100))[0]                              # Thin block lines
+    m_peaks = sig.find_peaks(system.h_profile, distance=min_block_width, height=min_heigth, prominence=0.2)[0]                              # Thin block lines
     t_peaks = sig.find_peaks(system.h_profile, distance=min_block_width, height=0.8, width=int(w / 274.5), prominence=0.4, wlen=int(w / 274.5))[0]       # Thick block lines (when a section ends, there's a double block line)
 
     # Since we did two separate peak detection operations, we should filter peaks that ended up too close to each other, note this is not needed if we just do a single peak detection pass
@@ -147,13 +154,23 @@ def find_blocks_in_system(img, system, plot=False):
             peaks.append(t_peak)
     block_splits = sorted(peaks)
 
+    # Filter out outliers by means of modified z-scores
+    zscores = modified_zscore(system.h_profile[block_splits])
+    block_splits = np.asarray(block_splits)[np.abs(zscores) < 5.0]
+
+    if plot:
+        plt.plot(system.h_profile)
+        for peak in block_splits:
+            plt.plot(peak, system.h_profile[peak], 'x', color='red')
+        plt.show()
+
     # Some plumbing to make sure the splits align correctly
-    if block_splits:
+    # if block_splits:
         # Add start and end of system to splits. If these are close to the first and last actual splits, the access blocks will be removed later in `discard_sparse_blocks`
-        if block_splits[0] > 0:
-            block_splits.insert(0, 0)
-        if block_splits[-1] < system.end - system.start:
-            block_splits.append(system.end - system.start)
+        # if block_splits[0] > 0:
+        #     block_splits.insert(0, 0)
+        # if block_splits[-1] < system.end - system.start:
+        #     block_splits.append(system.end - system.start)
     #     # If the first split is too close to the start of the system, the first split should start at the system start
     #     if block_splits[0] - system.start < min_block_width:
     #         block_splits[0] = 0
@@ -161,8 +178,8 @@ def find_blocks_in_system(img, system, plot=False):
     #     if system.end - block_splits[-1] < min_block_width:
     #         block_splits[-1] = system.end - system.start
     # # This else is really a fail-safe: if we did not find any blocks at all, we just assume the entire system is a single block, with just a start/end point equal to the system start/end
-    else:
-        block_splits += [system.start, system.end]
+    # else:
+    #     block_splits += [system.start, system.end]
 
     blocks = []
     for i in range(len(block_splits) - 1):
@@ -172,7 +189,7 @@ def find_blocks_in_system(img, system, plot=False):
 
 def find_measure_split_intersect(peak, midpoint, profile):
     # The split is made at a point of low mass (so as few intersections with mass as possible).
-    # A small margin is allowed, to find a balans between cutting in the middle and cutting through less mass.
+    # A small margin is allowed, to find a balance between cutting in the middle and cutting through less mass.
     region_min = np.min(profile)
     boundary_candidates = np.where(profile <= region_min * 1.25)[0]
     # Use index closest to the original midpoint, to bias towards the center between two bars
@@ -189,8 +206,7 @@ def find_measure_split_region(peak, profile, plot=False):
     return peak + measure_split
 
 
-# TODO: See if splitting through middle of largest stretch of (almost) no mass works better.
-def find_measures_in_system(img, system, blocks, method='intersect'):
+def find_measures_in_system(img, system, blocks, method='region'):
     h, w = np.shape(img)
     min_measure_dist = int(h / 30)
 
@@ -280,8 +296,8 @@ def save_measure_img(path, measures, name):
 def main():
     page_path = r"../tmp/test"
     plot = False
-    show = False
-    save = True
+    show = True
+    save = False
 
     paths = get_sorted_page_paths(page_path)
 
@@ -297,8 +313,8 @@ def main():
         all_measures = []
         for system in systems:
             blocks = find_blocks_in_system(img, system)
-            blocks = discard_sparse_blocks(img, blocks)
-            measures = find_measures_in_system(img, system, blocks)
+            # blocks = discard_sparse_blocks(img, blocks)
+            measures = find_measures_in_system(img, system, blocks, method='region')
             all_measures += measures
 
         if plot:
@@ -306,7 +322,7 @@ def main():
         if show:
             show_measures(path, all_measures)
         if save:
-            save_measure_img(path, all_measures, str((Path(r"../tmp/output") / path.split("/")[-1]).resolve()))
+            save_measure_img(path, all_measures, str((Path(r"../tmp/Mahler_Symphony_1/IP-segmented-img") / path.split("/")[-1]).resolve()))
 
 
 if __name__ == "__main__":

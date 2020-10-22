@@ -81,3 +81,38 @@ def preprocess(img):
     median_angle = np.median(angles)
     rotated = ndimage.rotate(img_bw, median_angle)
     return rotated
+
+
+def show_cv2_image(images, names, wait_for_input=True):
+    resize = 13
+    for (img, name) in zip(images, names):
+        dims = (int(img.shape[1] * resize/100), int(img.shape[0] * resize/100))
+        img = cv2.resize(img, dims)
+        cv2.imshow(name, img)
+    if wait_for_input:
+        key = cv2.waitKey(0)
+        if key == 27:
+            cv2.destroyAllWindows()
+
+
+# TODO not sure this works, is a version of preprocess_minrect
+def rotate_image(img, draw=False):
+    coords = np.column_stack(np.where(img > 0))
+
+    area = cv2.minAreaRect(coords)
+    area = ((area[0][1], area[0][0]), (area[1][1], area[1][0]), area[2])
+    if draw:
+        box = np.int0(cv2.boxPoints(area))
+        cv2.drawContours(img, [box], 0, (255, 0, 0), 3)
+        show_cv2_image([img], ['box'])
+
+    angle = area[-1]
+    if angle < -45:
+        angle = -(90 + angle)
+    else:
+        angle = -angle
+    (h, w) = img.shape[:2]
+    center = (w // 2, h // 2)
+    rotation = cv2.getRotationMatrix2D(center, angle, 1.0)
+    rotated = cv2.warpAffine(img, rotation, (w, h), flags=cv2.INTER_CUBIC, borderMode=cv2.BORDER_REPLICATE)
+    return np.asarray(rotated)

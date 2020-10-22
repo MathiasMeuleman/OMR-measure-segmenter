@@ -74,7 +74,7 @@ def auto_skew_image(_img, draw=False):
     center = (w // 2, h // 2)
     M = cv2.getRotationMatrix2D(center, angle, 1.0)
     rotated = cv2.warpAffine(_img, M, (w, h), flags=cv2.INTER_CUBIC, borderMode=cv2.BORDER_REPLICATE)
-    return rotated, M
+    return rotated
 
 
 def get_img_from_fig(fig, size):
@@ -174,7 +174,7 @@ def segment_measures(pages):
         page = 76 + idx
         path = join(Path(__file__).parent.absolute(), 'data/ppm-600/transcript-{}.png'.format(page))
         img = cv2.imread(path)
-        rotated, M = auto_skew_image(img.copy(), draw=False)
+        rotated = auto_skew_image(img.copy(), draw=False)
 
         # print(img.shape)
         # margins = np.array([np.max(np.where(img[i,:,1] != 255)) for i in np.arange(1000, 6000, 500)])
