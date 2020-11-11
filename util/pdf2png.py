@@ -24,5 +24,5 @@ def convert_pdf_file(_path, out_path, first_page=1, last_page=-1):
 
 
 if __name__ == "__main__":
-    path = r"../data/Beethoven_Andante_FMajor/IMSLP109835-PMLP30951-sibley.1802.1525.beethoven.andante.fmajor.pdf"
-    convert_pdf_file(path, out_path=r"../data/Beethoven_Andante_FMajor/ppm-600")
+    path = r"../data/Beethoven_Sextet/IMSLP34708-SIBLEY1802.7190.19715.2169-39087018981599score.pdf"
+    convert_pdf_file(path, out_path=r"../data/Beethoven_Sextet/ppm-600")
