@@ -8,6 +8,7 @@ import scipy.ndimage as im
 import scipy.signal as sig
 from PIL import Image, ImageDraw, ImageOps
 from matplotlib import patches
+from segmenter.util import get_hough_angle, get_minrect_angle
 
 np.set_printoptions(threshold=sys.maxsize)
 np.set_printoptions(linewidth=sys.maxsize)
@@ -141,7 +142,7 @@ def modified_zscore(data):
 def find_blocks_in_system(img, system, plot=False):
     h, w = np.shape(img)
     # This definition assumes a maximum amount of 20 measures per system, spread out with equal distance.
-    min_block_width = int(w / 20)
+    min_block_width = int(w / 25)
     min_heigth = np.mean(system.h_profile) + 2*np.std(system.h_profile)
     # TODO: Maybe we can do this in 1 go?
     m_peaks = sig.find_peaks(system.h_profile, distance=min_block_width, height=min_heigth, prominence=0.2)[0]                              # Thin block lines
@@ -156,12 +157,17 @@ def find_blocks_in_system(img, system, plot=False):
 
     # Filter out outliers by means of modified z-scores
     zscores = modified_zscore(system.h_profile[block_splits])
-    block_splits = np.asarray(block_splits)[np.abs(zscores) < 5.0]
+    print(zscores)
+    block_splits = np.asarray(block_splits)[np.abs(zscores) < 10.0]
 
     if plot:
         plt.plot(system.h_profile)
+        plt.axhline(np.mean(system.h_profile) + 3*np.std(system.h_profile))
         for peak in block_splits:
             plt.plot(peak, system.h_profile[peak], 'x', color='red')
+        plt.show()
+        plt.figure()
+        plt.hist(system.h_profile)
         plt.show()
 
     # Some plumbing to make sure the splits align correctly
@@ -294,10 +300,10 @@ def save_measure_img(path, measures, name):
 
 
 def main():
-    page_path = r"../tmp/test"
+    page_path = r"../data/Mahler_Symphony_1/ppm-600"
     plot = False
-    show = True
-    save = False
+    show = False
+    save = True
 
     paths = get_sorted_page_paths(page_path)
 
@@ -313,7 +319,7 @@ def main():
         all_measures = []
         for system in systems:
             blocks = find_blocks_in_system(img, system)
-            # blocks = discard_sparse_blocks(img, blocks)
+            blocks = discard_sparse_blocks(img, blocks)
             measures = find_measures_in_system(img, system, blocks, method='region')
             all_measures += measures
 
@@ -322,7 +328,7 @@ def main():
         if show:
             show_measures(path, all_measures)
         if save:
-            save_measure_img(path, all_measures, str((Path(r"../tmp/Mahler_Symphony_1/IP-segmented-img") / path.split("/")[-1]).resolve()))
+            save_measure_img(path, all_measures, str((Path(r"../tmp/output") / path.split("/")[-1]).resolve()))
 
 
 if __name__ == "__main__":
