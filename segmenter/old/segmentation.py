@@ -40,7 +40,7 @@ def overlay_lines(_img, lines):
             cv2.line(line_img, (x1, y1), (x2, y2), [255, 0, 0], 3)
     _img = cv2.addWeighted(_img, 0.8, line_img, 1.0, 0.0)
     # show_cv2_image([_img], ['lines'], True)
-    cv2.imwrite('lines_78.png', _img)
+    # cv2.imwrite('lines_78.png', _img)
     return cv2.cvtColor(line_img, cv2.COLOR_BGR2GRAY)
 
 
@@ -70,6 +70,7 @@ def auto_skew_image(_img, draw=False):
         angle = -(90 + angle)
     else:
         angle = -angle
+    print(angle)
     (h, w) = _img.shape[:2]
     center = (w // 2, h // 2)
     M = cv2.getRotationMatrix2D(center, angle, 1.0)

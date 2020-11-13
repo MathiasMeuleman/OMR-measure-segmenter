@@ -1,4 +1,4 @@
 __pycache__
 .idea/
-segmenter/model.pb
+segmenter/cnn_segmenter/model.pb
 tmp/
