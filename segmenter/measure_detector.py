@@ -67,7 +67,7 @@ def modified_zscore(data):
     return 0.6745 * deviation / mad
 
 
-def find_systems_in_page(img, page):
+def find_systems_in_page(img):
     h, w = np.shape(img)
 
     # Here we will use binary-propagation to fill the systems, making them fully solid.
@@ -191,13 +191,12 @@ def add_staffs_to_system(img, system, measures, method='region'):
 
 def detect_measures(path):
     img = open_and_preprocess(path)
-    page = Page(systems=[])
-    systems = find_systems_in_page(img, page)
+    systems = find_systems_in_page(img)
     populated_systems = []
     for system in systems:
         measures = find_measures_in_system(img, system)
         measures = add_staffs_to_system(img, system, measures, method='region')
         system = system._replace(measures=measures)
         populated_systems.append(system)
-    page = page._replace(systems=populated_systems)
+    page = Page(systems=populated_systems)
     return page
