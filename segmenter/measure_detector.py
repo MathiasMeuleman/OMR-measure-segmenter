@@ -10,9 +10,9 @@ np.set_printoptions(threshold=sys.maxsize)
 np.set_printoptions(linewidth=sys.maxsize)
 
 Page = namedtuple("Page", ["systems"])
-System = namedtuple("System", ["ulx", "uly", "lrx", "lry", "v_profile", "h_profile", "page", "measures"])
-Measure = namedtuple("Measure", ["ulx", "uly", "lrx", "lry", "system", "staffs"])
-Staff = namedtuple("Staff", ["ulx", "uly", "lrx", "lry", "measure"])
+System = namedtuple("System", ["ulx", "uly", "lrx", "lry", "v_profile", "h_profile", "measures"])
+Measure = namedtuple("Measure", ["ulx", "uly", "lrx", "lry", "staffs"])
+Staff = namedtuple("Staff", ["ulx", "uly", "lrx", "lry"])
 
 
 # This method does some pre-processing on the pages
@@ -98,7 +98,6 @@ def find_systems_in_page(img, page):
             lry=lry,
             v_profile=np.mean(img[uly:lry, ulx:lrx], axis=1),
             h_profile=np.mean(img[uly:lry, ulx:lrx], axis=0),
-            page=page,
             measures=[]
         )
         systems.append(system)
@@ -127,7 +126,6 @@ def find_measures_in_system(img, system):
             uly=system.uly,
             lrx=system.ulx + measure_splits[i + 1],
             lry=system.lry,
-            system=system,
             staffs=[]
         ))
     return measures
@@ -185,7 +183,6 @@ def add_staffs_to_system(img, system, measures, method='region'):
                 uly=measure.uly + staff_splits[i],
                 lrx=measure.lrx,
                 lry=measure.uly + staff_splits[i + 1],
-                measure=measure
             ))
         populated_measure = measure._replace(staffs=staffs)
         populated_measures.append(populated_measure)
