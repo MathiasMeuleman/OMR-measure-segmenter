@@ -2,6 +2,7 @@ import math
 
 from scipy import ndimage
 
+from PIL import Image, ImageDraw
 import cv2
 import numpy as np
 
@@ -59,6 +60,49 @@ def preprocess_minrect(_img):
     return rotated
 
 
+def rotate_image(img, draw=False):
+    angle = get_minrect_angle(img)
+    (h, w) = img.shape[:2]
+    center = (w // 2, h // 2)
+    rotation = cv2.getRotationMatrix2D(center, angle, 1.0)
+    rotated = cv2.warpAffine(img, rotation, (w, h), flags=cv2.INTER_CUBIC, borderMode=cv2.BORDER_REPLICATE)
+    return np.asarray(rotated)
+
+
+def get_hough_angle(img):
+    img = cv2.cvtColor(np.array(img).astype(np.uint8) * 255, cv2.COLOR_BGR2RGB)
+    img_edges = cv2.Canny(img, 99, 100, apertureSize=3)
+    lines = cv2.HoughLinesP(img_edges, 1, math.pi / 180.0, 100, minLineLength=100, maxLineGap=5)
+    display_img = Image.fromarray(img.astype(np.uint8) * 255)
+    angles = []
+    for line in lines:
+        x1, y1, x2, y2 = line[0]
+        angles.append(math.degrees(math.atan2(y2 - y1, x2 - x1)))
+        draw = ImageDraw.Draw(display_img)
+        draw.line(line)
+        del draw
+    print(angles)
+    return np.median(angles), np.asarray(display_img)
+
+
+def get_minrect_angle(img):
+    coords = np.column_stack(np.where(img > 0))
+    area = cv2.minAreaRect(coords)
+    area = ((area[0][1], area[0][0]), (area[1][1], area[1][0]), area[2])
+    print(area)
+    # if True:
+    #     box = np.int0(cv2.boxPoints(area))
+    #     cv2.drawContours(img, [box], 0, (255, 0, 0), 3)
+    #     show_cv2_image([img], ['box'])
+
+    angle = area[-1]
+    if angle < -45:
+        angle = -(90 + angle)
+    else:
+        angle = -angle
+    return angle, area
+
+
 def preprocess(img):
     """
     Preprocess the image in a few steps:
@@ -95,24 +139,3 @@ def show_cv2_image(images, names, wait_for_input=True):
             cv2.destroyAllWindows()
 
 
-# TODO not sure this works, is a version of preprocess_minrect
-def rotate_image(img, draw=False):
-    coords = np.column_stack(np.where(img > 0))
-
-    area = cv2.minAreaRect(coords)
-    area = ((area[0][1], area[0][0]), (area[1][1], area[1][0]), area[2])
-    if draw:
-        box = np.int0(cv2.boxPoints(area))
-        cv2.drawContours(img, [box], 0, (255, 0, 0), 3)
-        show_cv2_image([img], ['box'])
-
-    angle = area[-1]
-    if angle < -45:
-        angle = -(90 + angle)
-    else:
-        angle = -angle
-    (h, w) = img.shape[:2]
-    center = (w // 2, h // 2)
-    rotation = cv2.getRotationMatrix2D(center, angle, 1.0)
-    rotated = cv2.warpAffine(img, rotation, (w, h), flags=cv2.INTER_CUBIC, borderMode=cv2.BORDER_REPLICATE)
-    return np.asarray(rotated)
