@@ -10,9 +10,9 @@ np.set_printoptions(threshold=sys.maxsize)
 np.set_printoptions(linewidth=sys.maxsize)
 
 Page = namedtuple("Page", ["systems"])
-System = namedtuple("System", ["top", "bottom", "start", "end", "v_profile", "h_profile", "page", "measures"])
-Measure = namedtuple("Measure", ["start", "end", "system", "staffs"])
-Staff = namedtuple("Staff", ["top", "bottom", "measure"])
+System = namedtuple("System", ["ulx", "uly", "lrx", "lry", "v_profile", "h_profile", "page", "measures"])
+Measure = namedtuple("Measure", ["ulx", "uly", "lrx", "lry", "system", "staffs"])
+Staff = namedtuple("Staff", ["ulx", "uly", "lrx", "lry", "measure"])
 
 
 # This method does some pre-processing on the pages
@@ -83,21 +83,21 @@ def find_systems_in_page(img, page):
         current = mask * mean_solid_systems
 
         # Find top and bottom of system (wherever the value is first non-zero)
-        t = np.min(np.where(current > 0))
-        b = np.max(np.where(current > 0))
+        uly = np.min(np.where(current > 0))
+        lry = np.max(np.where(current > 0))
 
         # Find left and right border of system as the largest active region
-        snippet = np.mean(img_solid[t:b, :], axis=0)
+        snippet = np.mean(img_solid[uly:lry, :], axis=0)
         regions = contiguous_regions(snippet > 0.4)
-        l, r = regions[np.argmax(np.diff(regions).flatten())]
+        ulx, lrx = regions[np.argmax(np.diff(regions).flatten())]
 
         system = System(
-            top=t,
-            bottom=b,
-            start=l,
-            end=r,
-            v_profile=np.mean(img[t:b, l:r], axis=1),
-            h_profile=np.mean(img[t:b, l:r], axis=0),
+            ulx=ulx,
+            uly=uly,
+            lrx=lrx,
+            lry=lry,
+            v_profile=np.mean(img[uly:lry, ulx:lrx], axis=1),
+            h_profile=np.mean(img[uly:lry, ulx:lrx], axis=0),
             page=page,
             measures=[]
         )
@@ -123,8 +123,10 @@ def find_measures_in_system(img, system):
     measures = []
     for i in range(len(measure_splits) - 1):
         measures.append(Measure(
-            start=system.start + measure_splits[i],
-            end=system.start + measure_splits[i + 1],
+            ulx=system.ulx + measure_splits[i],
+            uly=system.uly,
+            lrx=system.ulx + measure_splits[i + 1],
+            lry=system.lry,
             system=system,
             staffs=[]
         ))
@@ -164,27 +166,29 @@ def add_staffs_to_system(img, system, measures, method='region'):
     populated_measures = []
     for j, measure in enumerate(measures):
         # Slice out the profile for this measure only
-        block_profile = np.mean(img[system.top:system.bottom, measure.start:measure.end], axis=1)
+        measure_profile = np.mean(img[measure.uly:measure.lry, measure.ulx:measure.lrx], axis=1)
         # The measure splits are relative to the current measure, start with 0 to include the top
         staff_splits = [0]
         for i in range(len(peaks) - 1):
             # Slice out the profile between two peaks (the part in between bars)
-            region_profile = block_profile[peaks[i]:peaks[i + 1]]
+            region_profile = measure_profile[peaks[i]:peaks[i + 1]]
             if method == 'intersect':
                 staff_splits.append(find_staff_split_intersect(peaks[i], midpoints[i], region_profile))
             elif method == 'region':
                 staff_splits.append(find_staff_split_region(peaks[i], midpoints[i], region_profile))
-        staff_splits.append(system.bottom - system.top)
+        staff_splits.append(system.lry - system.uly)
 
         staffs = []
         for i in range(len(staff_splits) - 1):
             staffs.append(Staff(
-                top=system.top + staff_splits[i],
-                bottom=system.top + staff_splits[i + 1],
+                ulx=measure.ulx,
+                uly=measure.uly + staff_splits[i],
+                lrx=measure.lrx,
+                lry=measure.uly + staff_splits[i + 1],
                 measure=measure
             ))
-        measure = measure._replace(staffs=staffs)
-        populated_measures.append(measure)
+        populated_measure = measure._replace(staffs=staffs)
+        populated_measures.append(populated_measure)
     return populated_measures
 
 
