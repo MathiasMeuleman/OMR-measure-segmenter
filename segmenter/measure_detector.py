@@ -155,7 +155,7 @@ def find_measures_in_system(img, system, plot=False):
     # Filter out outliers by means of modified z-scores
     zscores = modified_zscore(system.h_profile[measure_split_candidates])
     # Use only candidate peaks if their modified z-score is below a given threshold or if their height is at least 3 standard deviations over the mean
-    measure_splits = np.asarray(measure_split_candidates)[(np.abs(zscores) < 50.0) | (system.h_profile[measure_split_candidates] > 3*std)]
+    measure_splits = np.asarray(measure_split_candidates)[(np.abs(zscores) < 15.0) | (system.h_profile[measure_split_candidates] > mean + 3*std)]
 
     if plot:
         plt.figure()
