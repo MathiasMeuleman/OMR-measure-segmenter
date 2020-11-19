@@ -2,7 +2,7 @@ from PIL import Image, ImageDraw
 from tqdm import tqdm
 from pathlib import Path
 from posixpath import join
-from segmenter.old.image_util import data_dir
+from segmenter.old.image_util import data_dir, tmp_dir
 from segmenter.measure_detector import detect_measures
 
 score = 'Beethoven_Sextet'
@@ -72,7 +72,7 @@ def save_pages(images, pages):
 
 
 def main():
-    with open(join(data_dir, score, 'annotations_5.txt')) as file:
+    with open(join(tmp_dir, score, 'annotations_5.txt')) as file:
         baseline = [list(map(int, line.rstrip().split(' '))) for line in file]
 
     page_path = r"../tmp/test"

@@ -2,12 +2,11 @@ from pathlib import Path
 from posixpath import join
 
 import numpy as np
-import cv2
-import math
 from PIL import Image, ImageDraw
 
-root_dir = Path(__file__).parent.parent.absolute()
+root_dir = Path(__file__).parent.parent.parent.absolute()
 data_dir = join(root_dir, 'data')
+tmp_dir = join(root_dir, 'tmp')
 
 
 def overlay_segments(page, img_source_dir=join(data_dir, 'ppm-600'), measures_source_dir=join(data_dir, 'ppm-600-segments')):
