@@ -116,11 +116,14 @@ def find_systems_in_page(img):
         snippet = np.mean(img_solid[uly:lry, :], axis=0)
         regions = contiguous_regions(snippet > 0.4)
         ulx, lrx = regions[np.argmax(np.diff(regions).flatten())]
+        # Add 1 percent margin on both sides to improve peak detection at the edges of the system h_profile
+        ulx = int(ulx - (lrx - ulx) * 0.01)
+        lrx = int(lrx + (lrx - ulx) * 0.01)
 
         # Find staff boundaries for system
         staff_boundaries = find_system_staff_boundaries(np.mean(img[uly:lry, ulx:lrx], axis=1))
         largest_gap = np.max(np.diff(np.asarray(staff_boundaries).flatten()))
-        # Add some margins and re-run. This extra margin can help to detect staff boundaries at the edges of the system v_profile
+        # Add margin of staff gap to both sides to improve peak detection at the edges of the system v_profile
         uly = uly - largest_gap
         lry = lry + largest_gap
         staff_boundaries = find_system_staff_boundaries(np.mean(img[uly:lry, ulx:lrx], axis=1))
@@ -140,7 +143,7 @@ def find_systems_in_page(img):
     return systems
 
 
-def find_measures_in_system(img, system):
+def find_measures_in_system(img, system, plot=False):
     mean, std = np.mean(system.h_profile), np.std(system.h_profile)
     h, w = np.shape(img)
     # This definition assumes a maximum amount of 40 measures per system, spread out with equal distance.
@@ -153,6 +156,13 @@ def find_measures_in_system(img, system):
     zscores = modified_zscore(system.h_profile[measure_split_candidates])
     # Use only candidate peaks if their modified z-score is below a given threshold or if their height is at least 3 standard deviations over the mean
     measure_splits = np.asarray(measure_split_candidates)[(np.abs(zscores) < 50.0) | (system.h_profile[measure_split_candidates] > 3*std)]
+
+    if plot:
+        plt.figure()
+        plt.plot(system.h_profile)
+        for split in measure_splits:
+            plt.plot(split, system.h_profile[split], 'x', color='red')
+        plt.show()
 
     measures = []
     for i in range(len(measure_splits) - 1):
