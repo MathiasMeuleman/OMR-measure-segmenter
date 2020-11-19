@@ -2,6 +2,8 @@ from pathlib import Path
 from posixpath import join
 
 import numpy as np
+import cv2
+import math
 from PIL import Image, ImageDraw
 
 root_dir = Path(__file__).parent.parent.absolute()
@@ -45,3 +47,16 @@ def resize_img(_img, maxdims=(1000, 700)):
     ratio = max(img.size[1] / maxdims[0], img.size[0] / maxdims[1])
     image = img.resize((int(img.size[0] / ratio), int(img.size[1] / ratio)), Image.ANTIALIAS)
     return image
+
+
+def find_image_rotation(path):
+    img = cv2.imread(path)
+    img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    edges = cv2.Canny(img, 100, 100, apertureSize=3)
+    lines = cv2.HoughLinesP(edges, 1, math.pi / 180.0, 100, minLineLength=100, maxLineGap=5)
+
+    angles = []
+    for [[x1, y1, x2, y2]] in lines:
+        angle = math.degrees(math.atan2(y2 - y1, x2 - x1))
+        angles.append(angle)
+    return np.median(angles)
