@@ -9,8 +9,8 @@ from PIL import Image, ImageOps
 np.set_printoptions(threshold=sys.maxsize)
 np.set_printoptions(linewidth=sys.maxsize)
 
-Page = namedtuple("Page", ["systems"])
-System = namedtuple("System", ["ulx", "uly", "lrx", "lry", "v_profile", "h_profile", "measures"])
+Page = namedtuple("Page", ["height", "width", "systems"])
+System = namedtuple("System", ["ulx", "uly", "lrx", "lry", "v_profile", "h_profile", "staff_boundaries", "measures"])
 Measure = namedtuple("Measure", ["ulx", "uly", "lrx", "lry", "staffs"])
 Staff = namedtuple("Staff", ["ulx", "uly", "lrx", "lry"])
 
@@ -67,6 +67,32 @@ def modified_zscore(data):
     return 0.6745 * deviation / mad
 
 
+def find_system_staff_boundaries(v_profile, plot=False):
+    peaks = sig.find_peaks(v_profile, height=0.5, prominence=0.2)[0]  # Find peaks in vertical profile, which indicate the bar lines.
+    gaps = np.diff(peaks)
+
+    median_gap = np.median(gaps)
+    staff_split_indices = np.where(gaps > 2*median_gap)[0]
+    staff_split_indices = np.append(staff_split_indices, gaps.shape[0])
+    staff_boundaries = []
+    cur_start = 0
+    for staff_split_idx in staff_split_indices:
+        staff_boundaries.append([peaks[cur_start], peaks[staff_split_idx]])
+        cur_start = staff_split_idx + 1
+
+    if plot:
+        plt.figure()
+        plt.plot(v_profile)
+        for peak in peaks:
+            plt.plot(peak, v_profile[peak], 'x', color='red')
+        for bound in staff_boundaries:
+            plt.axvline(bound[0], color='green')
+            plt.axvline(bound[1], color='green')
+        plt.show()
+
+    return staff_boundaries
+
+
 def find_systems_in_page(img):
     h, w = np.shape(img)
 
@@ -91,6 +117,14 @@ def find_systems_in_page(img):
         regions = contiguous_regions(snippet > 0.4)
         ulx, lrx = regions[np.argmax(np.diff(regions).flatten())]
 
+        # Find staff boundaries for system
+        staff_boundaries = find_system_staff_boundaries(np.mean(img[uly:lry, ulx:lrx], axis=1))
+        largest_gap = np.max(np.diff(np.asarray(staff_boundaries).flatten()))
+        # Add some margins and re-run. This extra margin can help to detect staff boundaries at the edges of the system v_profile
+        uly = uly - largest_gap
+        lry = lry + largest_gap
+        staff_boundaries = find_system_staff_boundaries(np.mean(img[uly:lry, ulx:lrx], axis=1))
+
         system = System(
             ulx=ulx,
             uly=uly,
@@ -98,6 +132,7 @@ def find_systems_in_page(img):
             lry=lry,
             v_profile=np.mean(img[uly:lry, ulx:lrx], axis=1),
             h_profile=np.mean(img[uly:lry, ulx:lrx], axis=0),
+            staff_boundaries=staff_boundaries,
             measures=[]
         )
         systems.append(system)
