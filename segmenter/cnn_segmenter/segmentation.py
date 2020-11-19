@@ -6,13 +6,38 @@ import numpy as np
 import tensorflow as tf
 from PIL import Image
 
-from segmenter.image_util import data_dir, overlay_segments, root_dir
-from segmenter.util import consecutive, compare_measure_bounding_boxes, preprocess
+from segmenter.old.image_util import data_dir, overlay_segments, root_dir
+from util.cv2_util import preprocess
 
 warnings.filterwarnings('ignore')
 
 graph_initialized = False
 sess = None
+
+
+def consecutive(data, stepsize=1):
+    return np.split(data, np.where(np.diff(data) > stepsize)[0] + 1)
+
+
+def compare_measure_bounding_boxes(self, other):
+    """Compares bounding boxes of two measures and returns which one should come first"""
+    if self['ulx'] >= other['ulx'] and self['uly'] >= other['uly']:
+        return +1  # self after other
+    elif self['ulx'] < other['ulx'] and self['uly'] < other['uly']:
+        return -1  # other after self
+    else:
+        overlap_y = min(self['lry'] - other['uly'], other['lry'] - self['uly']) \
+                    / min(self['lry'] - self['uly'], other['lry'] - other['uly'])
+        if overlap_y >= 0.5:
+            if self['ulx'] < other['ulx']:
+                return -1
+            else:
+                return 1
+        else:
+            if self['ulx'] < other['ulx']:
+                return 1
+            else:
+                return -1
 
 
 def initialize_graph():

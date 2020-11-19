@@ -2,7 +2,7 @@ from PIL import Image, ImageDraw
 from tqdm import tqdm
 from pathlib import Path
 from posixpath import join
-from segmenter.image_util import data_dir
+from segmenter.old.image_util import data_dir
 from segmenter.measure_detector import detect_measures
 
 score = 'Beethoven_Sextet'

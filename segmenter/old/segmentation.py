@@ -10,8 +10,8 @@ from matplotlib import pyplot as plt
 from scipy.signal import find_peaks
 from skimage.filters import threshold_otsu
 
-from segmenter.image_util import data_dir, resize_img
-from segmenter.util import preprocess, consecutive
+from segmenter.old.image_util import data_dir, resize_img
+from util.cv2_util import preprocess
 
 
 def show_cv2_image(images, names, wait_for_input=True):
