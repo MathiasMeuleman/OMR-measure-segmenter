@@ -166,49 +166,61 @@ def find_measures_in_system(img, system):
     return measures
 
 
-def find_staff_split_intersect(peak, midpoint, profile):
+def find_staff_split_intersect(profile, plot=False):
     # The split is made at a point of low mass (so as few intersections with mass as possible).
     # A small margin is allowed, to find a balance between cutting in the middle and cutting through less mass.
     region_min = np.min(profile)
+    midpoint = int(profile.shape[0] / 2)
     boundary_candidates = np.where(profile <= region_min * 1.25)[0]
     # Use index closest to the original midpoint, to bias towards the center between two bars
-    staff_split = boundary_candidates[(np.abs(boundary_candidates - (midpoint - peak))).argmin()]
-    return peak + staff_split
+    staff_split = boundary_candidates[(np.abs(boundary_candidates - midpoint)).argmin()]
+
+    if plot:
+        plt.figure()
+        plt.plot(profile)
+        plt.axvline(staff_split, color='red')
+        plt.show()
+
+    return staff_split
 
 
-def find_staff_split_region(peak, midpoint, profile):
+def find_staff_split_region(profile, plot=False):
     # Find the longest region with intensities below a certain threshold
-    region_splits = contiguous_regions(profile < 0.1)
+    region_min = np.min(profile)
+    region_splits = contiguous_regions(profile <= region_min * 1.25)
     # Fallback to 'intersect' method when no region is found
     if region_splits.shape[0] == 0:
-        return find_staff_split_intersect(peak, midpoint, profile)
+        return find_staff_split_intersect(profile)
     region_idx = np.argmax(np.diff(region_splits).flatten())
     # Split the measures at the middle of the retrieved region
     staff_split = int(np.mean(region_splits[region_idx]))
-    return peak + staff_split
+
+    if plot:
+        plt.figure()
+        plt.plot(profile)
+        plt.axvline(staff_split, color='red')
+        plt.show()
+
+    return staff_split
 
 
 def add_staffs_to_system(img, system, measures, method='region'):
-    h, w = np.shape(img)
-    min_measure_dist = int(h / 30)
-
-    # First we find peaks over the entire system to find the middle between each two consecutive bars
-    peaks = sig.find_peaks(system.v_profile, distance=min_measure_dist, height=0.2, prominence=0.2)[0]  # Find peaks in vertical profile, which indicate the bar lines.
-    midpoints = np.asarray(peaks[:-1] + np.round(np.diff(peaks) / 2), dtype='int')  # Get the midpoints between the detected bar lines, which will be used as the starting point for getting the Measures.
-
     populated_measures = []
     for j, measure in enumerate(measures):
         # Slice out the profile for this measure only
         measure_profile = np.mean(img[measure.uly:measure.lry, measure.ulx:measure.lrx], axis=1)
         # The measure splits are relative to the current measure, start with 0 to include the top
         staff_splits = [0]
-        for i in range(len(peaks) - 1):
+        for i in range(len(system.staff_boundaries) - 1):
             # Slice out the profile between two peaks (the part in between bars)
-            region_profile = measure_profile[peaks[i]:peaks[i + 1]]
+            region_profile = measure_profile[system.staff_boundaries[i][1]:system.staff_boundaries[i + 1][0]]
             if method == 'intersect':
-                staff_splits.append(find_staff_split_intersect(peaks[i], midpoints[i], region_profile))
+                staff_split = find_staff_split_intersect(region_profile)
             elif method == 'region':
-                staff_splits.append(find_staff_split_region(peaks[i], midpoints[i], region_profile))
+                staff_split = find_staff_split_region(region_profile)
+            else:
+                staff_split = int(region_profile.shape[0] / 2)
+            staff_splits.append(staff_split + system.staff_boundaries[i][1])
         staff_splits.append(system.lry - system.uly)
 
         staffs = []
@@ -226,6 +238,7 @@ def add_staffs_to_system(img, system, measures, method='region'):
 
 def detect_measures(path):
     img = open_and_preprocess(path)
+    height, width = img.shape
     systems = find_systems_in_page(img)
     populated_systems = []
     for system in systems:
@@ -233,5 +246,5 @@ def detect_measures(path):
         measures = add_staffs_to_system(img, system, measures, method='region')
         system = system._replace(measures=measures)
         populated_systems.append(system)
-    page = Page(systems=populated_systems)
+    page = Page(height=height, width=width, systems=populated_systems)
     return page
