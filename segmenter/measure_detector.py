@@ -144,12 +144,20 @@ def find_systems_in_page(img):
 
 
 def find_measures_in_system(img, system, plot=False):
-    mean, std = np.mean(system.h_profile), np.std(system.h_profile)
     h, w = np.shape(img)
-    # This definition assumes a maximum amount of 40 measures per system, spread out with equal distance.
-    min_block_width = int(w / 40)
-    min_heigth = mean + 2*std
-    peaks = sig.find_peaks(system.h_profile, distance=min_block_width, height=min_heigth, prominence=0.2)[0]
+
+    all_indices = np.arange(img.shape[0])
+    slices = [slice(system.uly + staff[0], system.uly + staff[1]) for staff in system.staff_boundaries]
+    remove_indices = np.hstack([all_indices[i] for i in slices])
+    img_without_staffs = np.copy(img)
+    img_without_staffs[remove_indices, :] = 0
+    h_profile_without_staffs = np.mean(img_without_staffs[system.uly:system.lry, system.ulx:system.lrx], axis=0)
+    mean, std = np.mean(h_profile_without_staffs), np.std(h_profile_without_staffs)
+
+    # Take a relatively small min_width to also find measure lines in measures (for e.g. a pickup or anacrusis)
+    min_block_width = int(w / 50)
+    min_height = mean + 2*std
+    peaks = sig.find_peaks(h_profile_without_staffs, distance=min_block_width, height=min_height, prominence=0.2)[0]
     measure_split_candidates = sorted(peaks)
 
     # Filter out outliers by means of modified z-scores
@@ -159,9 +167,10 @@ def find_measures_in_system(img, system, plot=False):
 
     if plot:
         plt.figure()
-        plt.plot(system.h_profile)
-        for split in measure_splits:
-            plt.plot(split, system.h_profile[split], 'x', color='red')
+        plt.plot(h_profile_without_staffs, color='green')
+        plt.axhline(mean + 2*std)
+        for split in peaks:
+            plt.plot(split, h_profile_without_staffs[split], 'x', color='red')
         plt.show()
 
     measures = []
@@ -208,6 +217,7 @@ def find_staff_split_region(profile, plot=False):
     if plot:
         plt.figure()
         plt.plot(profile)
+        plt.axhline(region_min * 1.25)
         plt.axvline(staff_split, color='red')
         plt.show()
 
@@ -227,7 +237,7 @@ def add_staffs_to_system(img, system, measures, method='region'):
             if method == 'intersect':
                 staff_split = find_staff_split_intersect(region_profile)
             elif method == 'region':
-                staff_split = find_staff_split_region(region_profile)
+                staff_split = find_staff_split_region(region_profile, plot=True)
             else:
                 staff_split = int(region_profile.shape[0] / 2)
             staff_splits.append(staff_split + system.staff_boundaries[i][1])
