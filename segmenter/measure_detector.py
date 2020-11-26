@@ -157,13 +157,15 @@ def find_measures_in_system(img, system, plot=False):
     # Take a relatively small min_width to also find measure lines in measures (for e.g. a pickup or anacrusis)
     min_block_width = int(w / 50)
     min_height = mean + 2*std
-    peaks = sig.find_peaks(h_profile_without_staffs, distance=min_block_width, height=min_height, prominence=0.2)[0]
+    peaks = sig.find_peaks(h_profile_without_staffs, distance=min_block_width, height=min_height, prominence=0.18)[0]
     measure_split_candidates = sorted(peaks)
 
     # Filter out outliers by means of modified z-scores
-    zscores = modified_zscore(system.h_profile[measure_split_candidates])
+    zscores = modified_zscore(h_profile_without_staffs[measure_split_candidates])
     # Use only candidate peaks if their modified z-score is below a given threshold or if their height is at least 3 standard deviations over the mean
-    measure_splits = np.asarray(measure_split_candidates)[(np.abs(zscores) < 15.0) | (system.h_profile[measure_split_candidates] > mean + 3*std)]
+    measure_splits = np.asarray(measure_split_candidates)[(np.abs(zscores) < 15.0) | (h_profile_without_staffs[measure_split_candidates] > mean + 3*std)]
+    if measure_splits[-1] < (h_profile_without_staffs.shape[0] - 2*min_block_width):
+        measure_splits = np.append(measure_splits, h_profile_without_staffs.shape[0])
 
     if plot:
         plt.figure()
@@ -237,7 +239,7 @@ def add_staffs_to_system(img, system, measures, method='region'):
             if method == 'intersect':
                 staff_split = find_staff_split_intersect(region_profile)
             elif method == 'region':
-                staff_split = find_staff_split_region(region_profile, plot=True)
+                staff_split = find_staff_split_region(region_profile)
             else:
                 staff_split = int(region_profile.shape[0] / 2)
             staff_splits.append(staff_split + system.staff_boundaries[i][1])
