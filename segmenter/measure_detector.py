@@ -5,11 +5,13 @@ import scipy.signal as sig
 import sys
 from collections import namedtuple
 from PIL import Image, ImageOps
+from util.cv2_util import find_image_rotation
+
 
 np.set_printoptions(threshold=sys.maxsize)
 np.set_printoptions(linewidth=sys.maxsize)
 
-Page = namedtuple("Page", ["height", "width", "systems"])
+Page = namedtuple("Page", ["height", "width", "rotation", "systems"])
 System = namedtuple("System", ["ulx", "uly", "lrx", "lry", "v_profile", "h_profile", "staff_boundaries", "measures"])
 Measure = namedtuple("Measure", ["ulx", "uly", "lrx", "lry", "staffs"])
 Staff = namedtuple("Staff", ["ulx", "uly", "lrx", "lry"])
@@ -17,11 +19,13 @@ Staff = namedtuple("Staff", ["ulx", "uly", "lrx", "lry"])
 
 # This method does some pre-processing on the pages
 def open_and_preprocess(path):
-    original = Image.fromarray(plt.imread(path)[:, :, 0]).convert('L')  # Convert to "luminance" (single-channel greyscale)
-    img = ImageOps.autocontrast(original)                             # Does some automatic histogram stretching to enhance contrast
+    original = Image.open(path).convert('L')  # Convert to "luminance" (single-channel greyscale)
+    rotation = find_image_rotation(path)
+    img = original.rotate(rotation, fillcolor='white')
+    img = ImageOps.autocontrast(img)                             # Does some automatic histogram stretching to enhance contrast
     img = ImageOps.invert(img)                                   # Inverts the image so we get white on black
     img = img.point(lambda x: x > 50)                           # Threshold on value 50, this will convert the range into [0, 1] (floats though!)
-    return np.asarray(img)
+    return np.asarray(img), rotation
 
 
 def contiguous_regions(condition):
@@ -68,7 +72,12 @@ def modified_zscore(data):
 
 
 def find_system_staff_boundaries(v_profile, plot=False):
-    peaks = sig.find_peaks(v_profile, height=0.5, prominence=0.2)[0]  # Find peaks in vertical profile, which indicate the bar lines.
+    if plot:
+        plt.figure()
+        plt.plot(v_profile)
+        plt.show()
+
+    peaks = sig.find_peaks(v_profile, height=0.3, prominence=0.1)[0]  # Find peaks in vertical profile, which indicate the bar lines.
     gaps = np.diff(peaks)
 
     median_gap = np.median(gaps)
@@ -76,6 +85,9 @@ def find_system_staff_boundaries(v_profile, plot=False):
     staff_split_indices = np.append(staff_split_indices, gaps.shape[0])
     staff_boundaries = []
     cur_start = 0
+    if len(staff_split_indices) == 0:
+        return []
+
     for staff_split_idx in staff_split_indices:
         staff_boundaries.append([peaks[cur_start], peaks[staff_split_idx]])
         cur_start = staff_split_idx + 1
@@ -93,7 +105,7 @@ def find_system_staff_boundaries(v_profile, plot=False):
     return staff_boundaries
 
 
-def find_systems_in_page(img):
+def find_systems_in_page(img, plot=False):
     h, w = np.shape(img)
 
     # Here we will use binary-propagation to fill the systems, making them fully solid.
@@ -117,16 +129,16 @@ def find_systems_in_page(img):
         regions = contiguous_regions(snippet > 0.4)
         ulx, lrx = regions[np.argmax(np.diff(regions).flatten())]
         # Add 1 percent margin on both sides to improve peak detection at the edges of the system h_profile
-        ulx = int(ulx - (lrx - ulx) * 0.01)
-        lrx = int(lrx + (lrx - ulx) * 0.01)
+        ulx = max(0, int(ulx - (lrx - ulx) * 0.01))
+        lrx = min(w, int(lrx + (lrx - ulx) * 0.01))
 
         # Find staff boundaries for system
-        staff_boundaries = find_system_staff_boundaries(np.mean(img[uly:lry, ulx:lrx], axis=1))
+        staff_boundaries = find_system_staff_boundaries(np.mean(img[uly:lry, ulx:lrx], axis=1), plot)
         largest_gap = np.max(np.diff(np.asarray(staff_boundaries).flatten()))
         # Add margin of staff gap to both sides to improve peak detection at the edges of the system v_profile
-        uly = uly - largest_gap
-        lry = lry + largest_gap
-        staff_boundaries = find_system_staff_boundaries(np.mean(img[uly:lry, ulx:lrx], axis=1))
+        uly = max(0, uly - largest_gap)
+        lry = min(h, lry + largest_gap)
+        staff_boundaries = find_system_staff_boundaries(np.mean(img[uly:lry, ulx:lrx], axis=1), plot)
 
         system = System(
             ulx=ulx,
@@ -157,14 +169,14 @@ def find_measures_in_system(img, system, plot=False):
     # Take a relatively small min_width to also find measure lines in measures (for e.g. a pickup or anacrusis)
     min_block_width = int(w / 50)
     min_height = mean + 2*std
-    peaks = sig.find_peaks(h_profile_without_staffs, distance=min_block_width, height=min_height, prominence=0.18)[0]
+    peaks = sig.find_peaks(h_profile_without_staffs, distance=min_block_width, height=min_height, prominence=0.15)[0]
     measure_split_candidates = sorted(peaks)
 
     # Filter out outliers by means of modified z-scores
     zscores = modified_zscore(h_profile_without_staffs[measure_split_candidates])
     # Use only candidate peaks if their modified z-score is below a given threshold or if their height is at least 3 standard deviations over the mean
     measure_splits = np.asarray(measure_split_candidates)[(np.abs(zscores) < 15.0) | (h_profile_without_staffs[measure_split_candidates] > mean + 3*std)]
-    if measure_splits[-1] < (h_profile_without_staffs.shape[0] - 2*min_block_width):
+    if measure_splits.shape[0] > 0 and measure_splits[-1] < (h_profile_without_staffs.shape[0] - 2*min_block_width):
         measure_splits = np.append(measure_splits, h_profile_without_staffs.shape[0])
 
     if plot:
@@ -258,15 +270,15 @@ def add_staffs_to_system(img, system, measures, method='region'):
     return populated_measures
 
 
-def detect_measures(path):
-    img = open_and_preprocess(path)
+def detect_measures(path, plot=False):
+    img, rotation = open_and_preprocess(path)
     height, width = img.shape
-    systems = find_systems_in_page(img)
+    systems = find_systems_in_page(img, plot)
     populated_systems = []
     for system in systems:
-        measures = find_measures_in_system(img, system)
+        measures = find_measures_in_system(img, system, plot)
         measures = add_staffs_to_system(img, system, measures, method='region')
         system = system._replace(measures=measures)
         populated_systems.append(system)
-    page = Page(height=height, width=width, systems=populated_systems)
+    page = Page(height=height, width=width, rotation=rotation, systems=populated_systems)
     return page
