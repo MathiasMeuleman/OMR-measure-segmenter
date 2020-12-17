@@ -1,0 +1,2 @@
+Mahler_Symphony_1-transcript-12.png: staffs do not have equal length; the staffs at the top are shorter than the staffs at the bottom.
+Mahler_Symphony_1-transcript-46.png: staffs of the second system do not have equal length; the staffs at the top are longer than the staffs at the bottom.
