@@ -1,60 +1,5 @@
-import math
-
 import cv2
 import numpy as np
-from scipy import ndimage
-
-
-def preprocess_minrect(_img):
-    """
-    Takes a numpy array of (w x h x 3) representing the image.
-    Binarizes the image (color 2 grayscale) and rotates the image such that its smallest rectangular bounding box
-    is aligned correctly.
-    :param _img:
-    :return:
-    """
-    _img = cv2.cvtColor(_img, cv2.COLOR_BGR2GRAY)
-    _img = cv2.bitwise_not(_img)
-    thres = cv2.threshold(_img, 0, 255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)[1]
-
-    coords = np.column_stack(np.where(thres > 0))
-    _area = cv2.minAreaRect(coords)
-    area = ((_area[0][1], _area[0][0]), (_area[1][1], _area[1][0]), _area[2])
-
-    angle = area[-1]
-    if angle < -45:
-        angle = -(90 + angle)
-    else:
-        angle = -angle
-    (h, w) = _img.shape[:2]
-    center = (w // 2, h // 2)
-    M = cv2.getRotationMatrix2D(center, angle, 1.0)
-    rotated = cv2.warpAffine(_img, M, (w, h), flags=cv2.INTER_CUBIC, borderMode=cv2.BORDER_REPLICATE)
-    return rotated
-
-
-def preprocess(img):
-    """
-    Preprocess the image in a few steps:
-      - Use Otsu thresholding to binarize the image
-      - Invert the image, for easier processing
-      - Rotate the image to a correct alignment. The median angle for detected Hough lines is taken as the rotation angle
-    :param img: The original image, as NumPy array
-    :return: The binarized, inverted, rotated image, as NumPy image
-    """
-    img_gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    img_bw = cv2.threshold(img_gray, 0, 255, cv2.THRESH_OTSU)[1]
-    img_bw = cv2.bitwise_not(img_bw)
-    img_edges = cv2.Canny(img_gray, 100, 100, apertureSize=3)
-    lines = cv2.HoughLinesP(img_edges, 1, math.pi / 180.0, 100, minLineLength=100, maxLineGap=5)
-    angles = []
-    for line in lines:
-        x1, y1, x2, y2 = line[0]
-        angles.append(math.degrees(math.atan2(y2 - y1, x2 - x1)))
-        cv2.line(img_gray, (x1, y1), (x2, y2), (255, 0, 0), 3)
-    median_angle = np.median(angles)
-    rotated = ndimage.rotate(img_bw, median_angle)
-    return rotated
 
 
 def show_cv2_image(images, names, wait_for_input=True):
@@ -69,14 +14,57 @@ def show_cv2_image(images, names, wait_for_input=True):
             cv2.destroyAllWindows()
 
 
-def find_image_rotation(path):
-    img = cv2.imread(path)
-    img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    edges = cv2.Canny(img, 100, 100, apertureSize=3)
-    lines = cv2.HoughLinesP(edges, 1, math.pi / 180.0, 100, minLineLength=100, maxLineGap=5)
+def draw_rad_lines(img, lines):
+    for rho, theta in lines:
+        a = np.cos(theta)
+        b = np.sin(theta)
+        x1 = 100
+        x2 = img.shape[1] - 100
+        y1 = int((rho - x1*a) / b)
+        y2 = int((rho - x2*a) / b)
 
-    angles = []
-    for [[x1, y1, x2, y2]] in lines:
-        angle = math.degrees(math.atan2(y2 - y1, x2 - x1))
-        angles.append(angle)
-    return np.median(angles)
+        cv2.line(img, (x1, y1), (x2, y2), (0, 0, 255), 2)
+    cv2.imwrite('lines.png', img)
+
+
+def rad_to_rotation(rad):
+    return rad * 180/np.pi - 90
+
+
+def correct_image_rotation(img):
+    img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    edges = cv2.Canny(img, 50, 150, apertureSize=3)
+    cv2.imwrite('edges.png', edges)
+    # Hough Transform for line detection, with precision for \ro and \theta at 1 pixel and 180 degrees, respectively
+    # Theta is bound for horizontal lines (90 degrees ~= 1.57 rads)
+    lines = cv2.HoughLines(edges, 1, np.pi / 180.0, int(img.shape[1] * 0.15), min_theta=1.45, max_theta=1.69)
+    lines = lines.reshape((lines.shape[0], 2))
+    median_rad_angle = np.median(lines[:, 1])
+    median_angle = rad_to_rotation(median_rad_angle)
+
+    center = tuple(np.array(img.shape[1::-1]) / 2)
+    rot_matrix = cv2.getRotationMatrix2D(center, median_angle, 1.0)
+    corrected_img = cv2.warpAffine(img, rot_matrix, img.shape[1::-1], flags=cv2.INTER_LINEAR)
+
+    return corrected_img, median_angle
+
+
+def invert_and_threshold(img):
+    inverted = cv2.bitwise_not(img)
+    blurred = cv2.GaussianBlur(inverted, (9, 9), 0)
+    _, bw = cv2.threshold(blurred, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+    return bw
+
+
+def find_barlines(img):
+    """
+    Assumes inverted white on black binary image. Use `invert_and_threshold` to obtain it.
+    :param img:
+    :return:
+    """
+    line_img = np.copy(img)
+    cols = line_img.shape[1]
+    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (cols // 30, 1))
+    line_img = cv2.erode(line_img, kernel)
+    line_img = cv2.dilate(line_img, kernel)
+    return line_img
