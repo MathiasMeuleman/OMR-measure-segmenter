@@ -33,19 +33,19 @@ def draw_page(detector):
     img.show()
 
 
-def save_annotations(detectors, score_name):
+def save_annotations(detectors, score_name, suffix=''):
     annotations = ''
     for detector in detectors:
         page = detector.page
         system_annotations = list(map(lambda system: str(len(system.staff_boundaries)) + ',' + str(len(system.measures)), page.systems))
         annotations += ' '.join(system_annotations) + '\n'
-    file_path = Path(data_dir, score_name, 'annotation_results.txt').resolve()
+    file_path = Path(data_dir, score_name, 'annotation_results' + suffix + '.txt').resolve()
     with open(file_path, 'w') as f:
         f.write(annotations)
 
 
-def save_pages(detectors, score_name):
-    pdf_filename = Path(data_dir, score_name, 'segmented_visual.pdf').resolve()
+def save_pages(detectors, score_name, suffix=''):
+    pdf_filename = Path(data_dir, score_name, 'segmented_visual' + suffix + '.pdf').resolve()
     im1 = construct_page_overlay(detectors[0])
     im_list = []
     for i in range(1, len(detectors)):
@@ -54,23 +54,23 @@ def save_pages(detectors, score_name):
     im1.save(pdf_filename, 'PDF', resolution=100.0, save_all=True, append_images=im_list)
 
 
-def detect(score_name):
+def detect(score_name, sys_method='lines', measure_method='region'):
     # page_path = Path(data_dir, score_name, 'ppm-300').resolve()
     page_path = Path(tmp_dir, 'single').resolve()
     paths = get_sorted_page_paths(page_path)
     detectors = []
     for i, path in tqdm(enumerate(paths)):
         print(path)
-        detector = MeasureDetector(path).detect(plot=False)
+        detector = MeasureDetector(path).detect(plot=True, sys_method=sys_method, measure_method=measure_method)
         draw_page(detector)
         detectors.append(detector)
     if score_name != '':
-        save_annotations(detectors, score_name)
-        save_pages(detectors, score_name)
+        save_annotations(detectors, score_name, suffix='_'+sys_method)
+        save_pages(detectors, score_name, suffix='_'+sys_method)
 
 
 if __name__ == '__main__':
-    # scores = ['Debussy_La_Mer', 'Dukas_l\'Apprenti_Sorcier', 'Haydn_Symphony_104_London', 'Mendelssohn_Psalm_42', 'Schubert_Symphony_4']
+    # scores = ['Beethoven_Sextet', 'Beethoven_Septett', 'Debussy_La_Mer', 'Dukas_l\'Apprenti_Sorcier', 'Haydn_Symphony_104_London', 'Mendelssohn_Psalm_42', 'Mozart_Symphony_31', 'Schubert_Symphony_4', 'Van_Bree_Allegro']
     scores = ['']
     for score in scores:
-        detect(score)
+        detect(score, sys_method='lines')
