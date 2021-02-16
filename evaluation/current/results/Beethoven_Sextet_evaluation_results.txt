@@ -1,0 +1,8 @@
+Test results Beethoven_Sextet:
+=============
+Measures on page 2, system 2 don't match: expected 11 measures, but found 10 measures
+Measures on page 8, system 2 don't match: expected 11 measures, but found 10 measures
+Measures on page 9, system 1 don't match: expected 13 measures, but found 12 measures
+Measures on page 14, system 2 don't match: expected 11 measures, but found 12 measures
+Measures on page 16, system 1 don't match: expected 7 measures, but found 6 measures
+Measures on page 22, system 1 don't match: expected 5 measures, but found 4 measures

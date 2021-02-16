@@ -1,0 +1,19 @@
+Test results Dukas_l_Apprenti_Sorcier:
+=============
+Staffs on page 8, system 2 don't match: expected 13 staffs, but found 12 staffs
+Staffs on page 11, system 2 don't match: expected 16 staffs, but found 17 staffs
+Staffs on page 15, system 1 don't match: expected 19 staffs, but found 17 staffs
+Staffs on page 17, system 1 don't match: expected 18 staffs, but found 17 staffs
+Measures on page 26, system 1 don't match: expected 1 measures, but found 12 measures
+Measures on page 28, system 1 don't match: expected 11 measures, but found 10 measures
+Staffs on page 29, system 1 don't match: expected 18 staffs, but found 19 staffs
+Measures on page 32, system 1 don't match: expected 11 measures, but found 9 measures
+Staffs on page 37, system 1 don't match: expected 18 staffs, but found 20 staffs
+Staffs on page 45, system 1 don't match: expected 26 staffs, but found 25 staffs
+Staffs on page 48, system 1 don't match: expected 19 staffs, but found 21 staffs
+Staffs on page 58, system 1 don't match: expected 19 staffs, but found 18 staffs
+Staffs on page 66, system 1 don't match: expected 24 staffs, but found 3 staffs
+Measures on page 66, system 1 don't match: expected 9 measures, but found 2 measures
+Staffs on page 67, system 1 don't match: expected 23 staffs, but found 22 staffs
+Measures on page 67, system 1 don't match: expected 10 measures, but found 5 measures
+Measures on page 71, system 1 don't match: expected 12 measures, but found 9 measures

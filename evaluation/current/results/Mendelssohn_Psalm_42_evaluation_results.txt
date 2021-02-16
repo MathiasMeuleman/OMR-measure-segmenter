@@ -1,0 +1,10 @@
+Test results Mendelssohn_Psalm_42:
+=============
+Measures on page 35, system 1 don't match: expected 14 measures, but found 13 measures
+Staffs on page 38, system 3 don't match: expected 6 staffs, but found 7 staffs
+Staffs on page 43, system 1 don't match: expected 11 staffs, but found 12 staffs
+Staffs on page 46, system 2 don't match: expected 11 staffs, but found 14 staffs
+Measures on page 46, system 2 don't match: expected 10 measures, but found 9 measures
+Staffs on page 55, system 1 don't match: expected 17 staffs, but found 20 staffs
+Staffs on page 57, system 1 don't match: expected 17 staffs, but found 19 staffs
+Staffs on page 62, system 1 don't match: expected 17 staffs, but found 18 staffs
