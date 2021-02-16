@@ -34,7 +34,6 @@ def rad_to_rotation(rad):
 def correct_image_rotation(img):
     img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
     edges = cv2.Canny(img, 50, 150, apertureSize=3)
-    cv2.imwrite('edges.png', edges)
     # Hough Transform for line detection, with precision for \ro and \theta at 1 pixel and 180 degrees, respectively
     # Theta is bound for horizontal lines (90 degrees ~= 1.57 rads)
     lines = cv2.HoughLines(edges, 1, np.pi / 180.0, int(img.shape[1] * 0.15), min_theta=1.45, max_theta=1.69)
@@ -44,7 +43,7 @@ def correct_image_rotation(img):
 
     center = tuple(np.array(img.shape[1::-1]) / 2)
     rot_matrix = cv2.getRotationMatrix2D(center, median_angle, 1.0)
-    corrected_img = cv2.warpAffine(img, rot_matrix, img.shape[1::-1], flags=cv2.INTER_LINEAR)
+    corrected_img = cv2.warpAffine(img, rot_matrix, img.shape[1::-1], flags=cv2.INTER_LINEAR, borderValue=(255, 255, 255))
 
     return corrected_img, median_angle
 
@@ -56,7 +55,7 @@ def invert_and_threshold(img):
     return bw
 
 
-def find_barlines(img):
+def find_horizontal_lines(img):
     """
     Assumes inverted white on black binary image. Use `invert_and_threshold` to obtain it.
     :param img:
@@ -67,4 +66,20 @@ def find_barlines(img):
     kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (cols // 30, 1))
     line_img = cv2.erode(line_img, kernel)
     line_img = cv2.dilate(line_img, kernel)
+
+    return line_img
+
+
+def find_vertical_lines(img):
+    """
+    Assumes inverted white on black binary image. Use `invert_and_threshold` to obtain it.
+    :param img:
+    :return:
+    """
+    line_img = np.copy(img)
+    rows = line_img.shape[0]
+    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (1, rows // 30))
+    line_img = cv2.erode(line_img, kernel)
+    line_img = cv2.dilate(line_img, kernel)
+
     return line_img
