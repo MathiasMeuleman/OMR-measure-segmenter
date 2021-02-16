@@ -1,6 +1,6 @@
 from PIL import Image
 from pathlib import Path
-from segmenter.old.image_util import data_dir
+from segmenter.dirs import data_dir
 from util.PIL_util import resize_img
 
 

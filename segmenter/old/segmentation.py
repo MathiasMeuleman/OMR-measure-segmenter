@@ -10,7 +10,8 @@ from matplotlib import pyplot as plt
 from scipy.signal import find_peaks
 from skimage.filters import threshold_otsu
 
-from segmenter.old.image_util import data_dir, resize_img
+from segmenter.old.image_util import resize_img
+from segmenter.dirs import data_dir
 from util.cv2_util import preprocess
 
 

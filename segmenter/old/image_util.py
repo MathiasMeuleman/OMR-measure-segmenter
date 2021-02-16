@@ -1,13 +1,10 @@
-from pathlib import Path
 from posixpath import join
 
 import numpy as np
 from PIL import Image, ImageDraw
-from util.PIL_util import resize_img
 
-root_dir = Path(__file__).parent.parent.parent.absolute()
-data_dir = join(root_dir, 'data')
-tmp_dir = join(root_dir, 'tmp')
+from segmenter.dirs import root_dir, data_dir
+from util.PIL_util import resize_img
 
 
 def overlay_segments(page, img_source_dir=join(data_dir, 'ppm-600'), measures_source_dir=join(data_dir, 'ppm-600-segments')):
@@ -22,7 +19,8 @@ def overlay_segments(page, img_source_dir=join(data_dir, 'ppm-600'), measures_so
     image.save(join(root_dir, 'tmp/Mahler_Symphony_1/CNN-segmented-img/page-{}.png'.format(page)))
 
 
-def split_image(page, img_source_dir=join(data_dir, 'ppm-600'), measures_source_dir=join(data_dir, 'ppm-600-segments'), save_dir=join(data_dir, 'ppm-600-measures')):
+def split_image(page, img_source_dir=join(data_dir, 'ppm-600'), measures_source_dir=join(data_dir, 'ppm-600-segments'), save_dir=join(
+    data_dir, 'ppm-600-measures')):
     image = Image.open(join(img_source_dir, 'transcript-{}.png'.format(page)))
     measures = np.load(join(measures_source_dir, 'transcript-{}.npy'.format(page)))
     for i, measure in enumerate(measures):

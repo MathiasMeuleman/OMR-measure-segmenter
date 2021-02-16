@@ -6,7 +6,8 @@ import numpy as np
 import tensorflow as tf
 from PIL import Image
 
-from segmenter.old.image_util import data_dir, overlay_segments, root_dir
+from segmenter.old.image_util import overlay_segments
+from segmenter.dirs import root_dir, data_dir
 from util.cv2_util import preprocess
 
 warnings.filterwarnings('ignore')

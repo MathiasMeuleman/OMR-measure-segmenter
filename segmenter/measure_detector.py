@@ -168,7 +168,9 @@ class MeasureDetector:
         v_lines[:, noise_mask] = 0
 
         h_profile = np.mean(v_lines, axis=1)
-        system_boundaries = contiguous_regions(h_profile > 0.0)
+        kernel = (1/9) * np.ones(9, dtype=np.float)
+        smoothed_h_profile = np.convolve(h_profile, kernel)[4:-4]
+        system_boundaries = contiguous_regions(smoothed_h_profile > 0.0)
         # Ignore system if it is too small in height (< 5% page height). Mainly this happens with text on pages.
         system_boundaries = system_boundaries[np.diff(system_boundaries).reshape(-1) / h > 0.05]
 
@@ -185,7 +187,7 @@ class MeasureDetector:
 
         if plot:
             plt.figure()
-            plt.plot(h_profile)
+            plt.plot(smoothed_h_profile)
             for system_boundary in system_boundaries:
                 plt.axvline(system_boundary[0], color='green')
                 plt.axvline(system_boundary[1], color='green')
@@ -203,7 +205,6 @@ class MeasureDetector:
             ulx = max(0, int(ulx - (lrx - ulx) * 0.01))
             lrx = min(w, int(lrx + (lrx - ulx) * 0.01))
 
-            print(ulx, lrx)
             system = System(
                 ulx=ulx,
                 uly=uly,
