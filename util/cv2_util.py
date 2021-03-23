@@ -32,7 +32,8 @@ def rad_to_rotation(rad):
 
 
 def correct_image_rotation(img):
-    img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    if len(img.shape) == 3:
+        img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
     edges = cv2.Canny(img, 50, 150, apertureSize=3)
     # Hough Transform for line detection, with precision for \ro and \theta at 1 pixel and 180 degrees, respectively
     # Theta is bound for horizontal lines (90 degrees ~= 1.57 rads)
@@ -79,7 +80,24 @@ def find_vertical_lines(img):
     line_img = np.copy(img)
     rows = line_img.shape[0]
     kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (1, rows // 30))
-    line_img = cv2.erode(line_img, kernel)
-    line_img = cv2.dilate(line_img, kernel)
+    line_img = cv2.morphologyEx(line_img, cv2.MORPH_OPEN, kernel)
+
+    return line_img
+
+
+def find_vertical_lines_subtracted(img):
+    """
+    Assumes inverted white on black binary image. Use `invert_and_threshold` to obtain it.
+    :param img:
+    :return:
+    """
+    line_img = np.copy(img)
+    rows = line_img.shape[0]
+    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (1, rows // 30))
+
+    hor_lines = find_horizontal_lines(line_img)
+    line_img = cv2.subtract(line_img, hor_lines)
+    line_img = cv2.GaussianBlur(line_img, (11, 11), 0)
+    line_img = cv2.morphologyEx(line_img, cv2.MORPH_OPEN, kernel)
 
     return line_img

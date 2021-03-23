@@ -7,7 +7,7 @@ import scipy.ndimage as im
 import scipy.signal as sig
 import sys
 
-from util.cv2_util import correct_image_rotation, find_horizontal_lines, find_vertical_lines, invert_and_threshold
+from util.cv2_util import correct_image_rotation, find_horizontal_lines, find_vertical_lines, find_vertical_lines_subtracted, invert_and_threshold
 from util.PIL_util import resize_img
 
 np.set_printoptions(threshold=sys.maxsize)
@@ -68,7 +68,7 @@ class MeasureDetector:
         self.path = path
         self.page = None
         self.original = self.rotated = self.bw = None
-        self.v_lines = None
+        self.v_lines = self.v_lines_subtr = None
         self.rotation = 0
         self._img_max = 255
 
@@ -82,19 +82,28 @@ class MeasureDetector:
         rotated, rotation = correct_image_rotation(original)
         bw = invert_and_threshold(rotated)
         v_lines = find_vertical_lines(bw)
+        v_lines_subtr = find_vertical_lines_subtracted(bw)
         self.original = original
         self.rotated = rotated
         self.bw = bw
         self.rotation = rotation
         self.v_lines = v_lines
+        self.v_lines_subtr = v_lines_subtr
 
-    def find_system_staff_boundaries_peaks(self, v_profile):
+    def find_system_staff_boundaries_peaks(self, v_profile, plot=False):
         # Find peaks in vertical profile, which indicate the bar lines.
         peaks = sig.find_peaks(v_profile, height=0.3 * self._img_max, prominence=0.1)[0]
         gaps = np.diff(peaks)
 
-        median_gap = np.median(gaps)
-        staff_split_indices = np.where(gaps > 2*median_gap)[0]
+        if plot:
+            plt.figure()
+            plt.plot(v_profile)
+            for peak in peaks:
+                plt.plot(peak, v_profile[peak], 'x', color='red')
+            plt.title('Vertical profile of system with detected peaks')
+            plt.show()
+
+        staff_split_indices = np.where(gaps > 2 * min(gaps.mean(), np.median(gaps)))[0]
         staff_split_indices = np.append(staff_split_indices, gaps.shape[0])
         staff_boundaries = []
         cur_start = 0
@@ -135,9 +144,10 @@ class MeasureDetector:
         return staff_boundaries
 
     def find_system_staff_boundaries(self, sub_img, method='peaks', plot=False):
+        sub_img, _ = correct_image_rotation(sub_img)
         v_profile = np.mean(sub_img, axis=1)
         if method == 'peaks':
-            staff_boundaries = self.find_system_staff_boundaries_peaks(v_profile)
+            staff_boundaries = self.find_system_staff_boundaries_peaks(v_profile, plot=plot)
         else:
             staff_boundaries = self.find_system_staff_boundaries_lines(sub_img, plot=plot)
         if plot:
@@ -164,7 +174,7 @@ class MeasureDetector:
         rx = min(w, int(rx + (rx - lx) * 0.01))
         noise_mask = np.ones(w, dtype=bool)
         noise_mask[lx:rx] = False
-        v_lines = self.v_lines
+        v_lines = self.v_lines_subtr
         v_lines[:, noise_mask] = 0
 
         h_profile = np.mean(v_lines, axis=1)

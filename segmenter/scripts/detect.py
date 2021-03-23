@@ -76,5 +76,6 @@ if __name__ == '__main__':
         scores = ['debug']
     else:
         scores = ['Beethoven_Sextet', 'Beethoven_Septett', 'Debussy_La_Mer', 'Dukas_l_Apprenti_Sorcier', 'Haydn_Symphony_104_London', 'Mendelssohn_Psalm_42', 'Mozart_Symphony_31', 'Schubert_Symphony_4', 'Van_Bree_Allegro']
+        # scores = ['Beethoven_Sextet', 'Van_Bree_Allegro']
     for score in scores:
         detect(score, sys_method='lines', mode=('debug' if debug is True else 'run'))
