@@ -1,0 +1,10 @@
+Test results Schubert_Symphony_4:
+=============
+Staffs on page 2, system 1 don't match: expected 13 staffs, but found 12 staffs
+Measures on page 3, system 1 don't match: expected 9 measures, but found 10 measures
+Staffs on page 15, system 2 don't match: expected 13 staffs, but found 14 staffs
+Staffs on page 48, system 1 don't match: expected 13 staffs, but found 9 staffs
+Measures on page 50, system 2 don't match: expected 10 measures, but found 9 measures
+Staffs on page 51, system 1 don't match: expected 13 staffs, but found 11 staffs
+Staffs on page 52, system 1 don't match: expected 13 staffs, but found 12 staffs
+Measures on page 60, system 2 don't match: expected 13 measures, but found 11 measures

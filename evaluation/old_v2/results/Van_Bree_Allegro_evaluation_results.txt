@@ -1,0 +1,12 @@
+Test results Van_Bree_Allegro:
+=============
+Systems on page 3 don't match: expected 1 systems, but found 3 systems
+Systems on page 7 don't match: expected 1 systems, but found 2 systems
+Systems on page 13 don't match: expected 1 systems, but found 2 systems
+Systems on page 15 don't match: expected 1 systems, but found 2 systems
+Systems on page 23 don't match: expected 1 systems, but found 2 systems
+Systems on page 31 don't match: expected 1 systems, but found 2 systems
+Systems on page 33 don't match: expected 1 systems, but found 2 systems
+Systems on page 37 don't match: expected 1 systems, but found 2 systems
+Systems on page 39 don't match: expected 1 systems, but found 2 systems
+Staffs on page 40, system 1 don't match: expected 16 staffs, but found 15 staffs

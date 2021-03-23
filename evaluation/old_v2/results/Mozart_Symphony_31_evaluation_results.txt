@@ -1,0 +1,8 @@
+Test results Mozart_Symphony_31:
+=============
+Staffs on page 5, system 1 don't match: expected 11 staffs, but found 10 staffs
+Staffs on page 10, system 1 don't match: expected 11 staffs, but found 9 staffs
+Staffs on page 19, system 1 don't match: expected 11 staffs, but found 12 staffs
+Measures on page 24, system 1 don't match: expected 6 measures, but found 5 measures
+Measures on page 30, system 2 don't match: expected 9 measures, but found 8 measures
+Measures on page 33, system 1 don't match: expected 9 measures, but found 8 measures
