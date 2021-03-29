@@ -8,15 +8,15 @@ import scipy.signal as sig
 import sys
 
 from util.cv2_util import correct_image_rotation, find_horizontal_lines, find_vertical_lines, find_vertical_lines_subtracted, invert_and_threshold
-from util.PIL_util import resize_img
 
 np.set_printoptions(threshold=sys.maxsize)
 np.set_printoptions(linewidth=sys.maxsize)
 
 Page = namedtuple("Page", ["height", "width", "rotation", "systems"])
-System = namedtuple("System", ["ulx", "uly", "lrx", "lry", "v_profile", "h_profile", "staff_boundaries", "measures"])
-Measure = namedtuple("Measure", ["ulx", "uly", "lrx", "lry", "staffs"])
+System = namedtuple("System", ["ulx", "uly", "lrx", "lry", "staffs", "system_measures", "measures"])
+Measure = namedtuple("Measure", ["ulx", "uly", "lrx", "lry"])
 Staff = namedtuple("Staff", ["ulx", "uly", "lrx", "lry"])
+MeasurePart = namedtuple("MeasurePart", ["ulx", "uly", "lrx", "lry"])
 
 
 def contiguous_regions(condition):
@@ -90,77 +90,6 @@ class MeasureDetector:
         self.v_lines = v_lines
         self.v_lines_subtr = v_lines_subtr
 
-    def find_system_staff_boundaries_peaks(self, v_profile, plot=False):
-        # Find peaks in vertical profile, which indicate the bar lines.
-        peaks = sig.find_peaks(v_profile, height=0.3 * self._img_max, prominence=0.1)[0]
-        gaps = np.diff(peaks)
-
-        if plot:
-            plt.figure()
-            plt.plot(v_profile)
-            for peak in peaks:
-                plt.plot(peak, v_profile[peak], 'x', color='red')
-            plt.title('Vertical profile of system with detected peaks')
-            plt.show()
-
-        staff_split_indices = np.where(gaps > 2 * min(gaps.mean(), np.median(gaps)))[0]
-        staff_split_indices = np.append(staff_split_indices, gaps.shape[0])
-        staff_boundaries = []
-        cur_start = 0
-        if len(staff_split_indices) == 0:
-            return []
-
-        for staff_split_idx in staff_split_indices:
-            staff_boundary = [peaks[cur_start], peaks[staff_split_idx]]
-            cur_start = staff_split_idx + 1
-            staff_boundaries.append(staff_boundary)
-        return staff_boundaries
-
-    def find_system_staff_boundaries_lines(self, sub_img, plot=False):
-        line_img = find_horizontal_lines(sub_img)
-        v_profile = np.mean(line_img, axis=1)
-        peaks = sig.find_peaks(v_profile, height=0.3 * self._img_max)[0]
-        gaps = np.diff(peaks)
-
-        if plot:
-            plt.figure()
-            plt.plot(v_profile)
-            for peak in peaks:
-                plt.plot(peak, v_profile[peak], 'x', color='red')
-            plt.title('Vertical profile of system with detected line peaks')
-            plt.show()
-
-        staff_split_indices = np.where(gaps > 2 * gaps.mean())[0]
-        staff_split_indices = np.append(staff_split_indices, gaps.shape[0])
-        staff_boundaries = []
-        cur_start = 0
-        if len(staff_split_indices) == 0:
-            return []
-
-        for staff_split_idx in staff_split_indices:
-            staff_boundary = [peaks[cur_start], peaks[staff_split_idx]]
-            cur_start = staff_split_idx + 1
-            staff_boundaries.append(staff_boundary)
-        return staff_boundaries
-
-    def find_system_staff_boundaries(self, sub_img, method='peaks', plot=False):
-        sub_img, _ = correct_image_rotation(sub_img)
-        v_profile = np.mean(sub_img, axis=1)
-        if method == 'peaks':
-            staff_boundaries = self.find_system_staff_boundaries_peaks(v_profile, plot=plot)
-        else:
-            staff_boundaries = self.find_system_staff_boundaries_lines(sub_img, plot=plot)
-        if plot:
-            plt.figure()
-            plt.plot(v_profile)
-            for bound in staff_boundaries:
-                plt.axvline(bound[0], color='green')
-                plt.axvline(bound[1], color='green')
-            plt.title("Vertical profile of system with staff boundaries")
-            plt.show()
-
-        return staff_boundaries
-
     def find_systems_in_page(self, plot=False):
         img = self.bw
         h, w = np.shape(img)
@@ -220,16 +149,99 @@ class MeasureDetector:
                 uly=uly,
                 lrx=lrx,
                 lry=lry,
-                v_profile=np.mean(img[uly:lry, ulx:lrx], axis=1),
-                h_profile=np.mean(img[uly:lry, ulx:lrx], axis=0),
-                staff_boundaries=[],
-                measures=[]
+                staffs=[],
+                system_measures=[],
+                measures=[],
             )
             systems.append(system)
 
         return systems
 
-    def find_measures_in_system(self, system, plot=False):
+    def find_system_staff_boundaries_peaks(self, v_profile, plot=False):
+        # Find peaks in vertical profile, which indicate the bar lines.
+        peaks = sig.find_peaks(v_profile, height=0.3 * self._img_max, prominence=0.1)[0]
+        gaps = np.diff(peaks)
+
+        if plot:
+            plt.figure()
+            plt.plot(v_profile)
+            for peak in peaks:
+                plt.plot(peak, v_profile[peak], 'x', color='red')
+            plt.title('Vertical profile of system with detected peaks')
+            plt.show()
+
+        staff_split_indices = np.where(gaps > 2 * min(gaps.mean(), np.median(gaps)))[0]
+        staff_split_indices = np.append(staff_split_indices, gaps.shape[0])
+        staff_boundaries = []
+        cur_start = 0
+        if len(staff_split_indices) == 0:
+            return []
+
+        for staff_split_idx in staff_split_indices:
+            staff_boundary = [peaks[cur_start], peaks[staff_split_idx]]
+            cur_start = staff_split_idx + 1
+            staff_boundaries.append(staff_boundary)
+        return staff_boundaries
+
+    def find_system_staff_boundaries_lines(self, sub_img, plot=False):
+        line_img = find_horizontal_lines(sub_img)
+        v_profile = np.mean(line_img, axis=1)
+        peaks = sig.find_peaks(v_profile, height=0.3 * self._img_max)[0]
+        gaps = np.diff(peaks)
+
+        if plot:
+            plt.figure()
+            plt.plot(v_profile)
+            for peak in peaks:
+                plt.plot(peak, v_profile[peak], 'x', color='red')
+            plt.title('Vertical profile of system with detected line peaks')
+            plt.show()
+
+        staff_split_indices = np.where(gaps > 2 * gaps.mean())[0]
+        staff_split_indices = np.append(staff_split_indices, gaps.shape[0])
+        staff_boundaries = []
+        cur_start = 0
+        if len(staff_split_indices) == 0:
+            return []
+
+        for staff_split_idx in staff_split_indices:
+            staff_boundary = [peaks[cur_start], peaks[staff_split_idx]]
+            cur_start = staff_split_idx + 1
+            staff_boundaries.append(staff_boundary)
+        return staff_boundaries
+
+    def find_system_staffs(self, system, method='peaks', plot=False):
+        ulx = system.system_measures[0].ulx
+        lrx = system.system_measures[len(system.system_measures) - 1].lrx
+        img = self.bw[system.uly:system.lry, ulx:lrx]
+        img, _ = correct_image_rotation(img)
+        v_profile = np.mean(img, axis=1)
+        if method == 'peaks':
+            staff_boundaries = self.find_system_staff_boundaries_peaks(v_profile, plot=plot)
+        else:
+            staff_boundaries = self.find_system_staff_boundaries_lines(img, plot=plot)
+        if plot:
+            plt.figure()
+            plt.plot(v_profile)
+            for bound in staff_boundaries:
+                plt.axvline(bound[0], color='green')
+                plt.axvline(bound[1], color='green')
+            plt.title("Vertical profile of system with staff boundaries")
+            plt.show()
+
+        staffs = []
+        for i in range(len(staff_boundaries)):
+            staff = Staff(
+                ulx=ulx,
+                uly=system.uly + staff_boundaries[i][0],
+                lrx=lrx,
+                lry=system.uly + staff_boundaries[i][1],
+            )
+            staffs.append(staff)
+        system = system._replace(staffs=staffs)
+        return system
+
+    def find_system_measures(self, system, plot=False):
         img = self.bw
         h, w = np.shape(img)
 
@@ -265,17 +277,22 @@ class MeasureDetector:
                 uly=system.uly,
                 lrx=system.ulx + measure_splits[i + 1],
                 lry=system.lry,
-                staffs=[]
             ))
-        return system._replace(measures=measures)
+        return system._replace(system_measures=measures)
 
-    def add_staff_boundaries(self, system, method='peaks', plot=False):
-        img = self.bw
-        ulx = system.measures[0].ulx
-        lrx = system.measures[len(system.measures) - 1].lrx
-        # Find staff boundaries for system
-        staff_boundaries = self.find_system_staff_boundaries(img[system.uly:system.lry, ulx:lrx], method, plot)
-        return system._replace(staff_boundaries=staff_boundaries)
+    def find_measures(self, system):
+        measures = []
+        for system_measure in system.system_measures:
+            for staff in system.staffs:
+                measure = Measure(
+                    ulx=system_measure.ulx,
+                    uly=staff.uly,
+                    lrx=system_measure.lrx,
+                    lry=staff.lry,
+                )
+                measures.append(measure)
+        system = system._replace(measures=measures)
+        return system
 
     def find_staff_split_intersect(self, profile, plot=False):
         # The split is made at a point of low mass (so as few intersections with mass as possible).
@@ -319,22 +336,21 @@ class MeasureDetector:
 
     def add_staffs_to_system(self, system, method='region'):
         img = self.bw
-        populated_measures = []
         for measure in system.measures:
             # Slice out the profile for this measure only
             measure_profile = np.mean(img[measure.uly:measure.lry, measure.ulx:measure.lrx], axis=1)
             # The measure splits are relative to the current measure, start with 0 to include the top
             staff_splits = []
-            for i in range(len(system.staff_boundaries) - 1):
+            for i in range(len(system.staffs) - 1):
                 # Slice out the profile between two peaks (the part in between bars)
-                region_profile = measure_profile[system.staff_boundaries[i][1]:system.staff_boundaries[i + 1][0]]
+                region_profile = measure_profile[system.staffs[i][1]:system.staffs[i + 1][0]]
                 if method == 'intersect':
                     staff_split = self.find_staff_split_intersect(region_profile)
                 elif method == 'region':
                     staff_split = self.find_staff_split_region(region_profile, plot=False)
                 else:
                     staff_split = int(region_profile.shape[0] / 2)
-                staff_splits.append(staff_split + system.staff_boundaries[i][1])
+                staff_splits.append(staff_split + system.staffs[i][1])
 
             staff_splits.insert(0, 0)
             staff_splits.append(system.lry - system.uly)
@@ -347,19 +363,18 @@ class MeasureDetector:
                     lrx=measure.lrx,
                     lry=measure.uly + staff_splits[j + 1],
                 ))
-            populated_measure = measure._replace(staffs=staffs)
-            populated_measures.append(populated_measure)
-        return system._replace(measures=populated_measures)
+            system = system._replace(staffs=staffs)
+        return system
 
-    def detect(self, sys_method='lines', measure_method='region', plot=False):
+    def detect(self, sys_method='lines', plot=False):
         self.open_and_preprocess()
         height, width = self.bw.shape
         systems = self.find_systems_in_page(plot=plot)
         populated_systems = []
         for system in systems:
-            system = self.find_measures_in_system(system, plot)
-            system = self.add_staff_boundaries(system, method=sys_method, plot=plot)
-            system = self.add_staffs_to_system(system, method=measure_method)
+            system = self.find_system_measures(system, plot=plot)
+            system = self.find_system_staffs(system, method=sys_method, plot=plot)
+            system = self.find_measures(system)
             populated_systems.append(system)
         page = Page(height=height, width=width, rotation=self.rotation, systems=populated_systems)
         self.page = page

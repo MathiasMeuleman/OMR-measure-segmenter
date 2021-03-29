@@ -16,10 +16,9 @@ def construct_page_overlay(detector):
     colors = ['red', 'orange', 'green', 'blue', 'purple']
     for i, system in enumerate(detector.page.systems):
         for measure in system.measures:
-            for staff in measure.staffs:
-                draw = ImageDraw.Draw(img)
-                draw.rectangle(((staff.ulx, staff.uly), (staff.lrx, staff.lry)), outline=colors[i % len(colors)], fill=None, width=5)
-                del draw
+            draw = ImageDraw.Draw(img)
+            draw.rectangle(((measure.ulx, measure.uly), (measure.lrx, measure.lry)), outline=colors[i % len(colors)], fill=None, width=5)
+            del draw
     scale = max_height / img.size[1]
     img = img.resize((int(img.size[0] * scale), int(img.size[1] * scale)), Image.ANTIALIAS)
     return img
@@ -51,7 +50,7 @@ def save_pages(detectors, score_name, version):
     im1.save(pdf_filename, 'PDF', resolution=100.0, save_all=True, append_images=im_list)
 
 
-def detect(score_name, sys_method='lines', measure_method='region', mode='run'):
+def detect(score_name, sys_method='lines', mode='run'):
     if mode == 'debug':
         page_path = Path(tmp_dir, 'single').resolve()
     else:
@@ -60,17 +59,18 @@ def detect(score_name, sys_method='lines', measure_method='region', mode='run'):
     detectors = []
     for i, path in tqdm(enumerate(paths)):
         print(path)
-        detector = MeasureDetector(path).detect(plot=(mode == 'debug'), sys_method=sys_method, measure_method=measure_method)
+        detector = MeasureDetector(path).detect(plot=(mode == 'debug'), sys_method=sys_method)
         if mode == 'debug':
             draw_page(detector)
-        detectors.append(detector)
+        else:
+            detectors.append(detector)
     if mode == 'run':
         save_annotations(detectors, score_name, version)
         save_pages(detectors, score_name, version)
 
 
 if __name__ == '__main__':
-    debug = False
+    debug = True
     version = 'current'
     if debug:
         scores = ['debug']
