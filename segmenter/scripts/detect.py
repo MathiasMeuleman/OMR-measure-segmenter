@@ -1,4 +1,4 @@
-from PIL import Image, ImageDraw
+from PIL import Image, ImageColor, ImageDraw
 from tqdm import tqdm
 from pathlib import Path
 from collections import namedtuple
@@ -15,9 +15,12 @@ def construct_page_overlay(detector):
     max_height = 950
     colors = ['red', 'orange', 'green', 'blue', 'purple']
     for i, system in enumerate(detector.page.systems):
+        color = colors[i % len(colors)]
+        color_rgb = ImageColor.getrgb(color)
+        color_rgba = (color_rgb[0], color_rgb[1], color_rgb[2], 96)
         for measure in system.measures:
-            draw = ImageDraw.Draw(img)
-            draw.rectangle(((measure.ulx, measure.uly), (measure.lrx, measure.lry)), outline=colors[i % len(colors)], fill=None, width=5)
+            draw = ImageDraw.Draw(img, mode='RGBA')
+            draw.rectangle(((measure.ulx, measure.uly), (measure.lrx, measure.lry)), outline=color_rgb, fill=color_rgba, width=5)
             del draw
     scale = max_height / img.size[1]
     img = img.resize((int(img.size[0] * scale), int(img.size[1] * scale)), Image.ANTIALIAS)
@@ -52,7 +55,7 @@ def save_pages(detectors, score_name, version):
 
 def detect(score_name, sys_method='lines', mode='run'):
     if mode == 'debug':
-        page_path = Path(tmp_dir, 'single').resolve()
+        page_path = Path(tmp_dir, 'temp').resolve()
     else:
         page_path = Path(data_dir, score_name, 'ppm-300').resolve()
     paths = get_sorted_page_paths(page_path)
