@@ -1,13 +1,30 @@
+from collections import namedtuple
+from pathlib import Path
+
 from PIL import Image, ImageColor, ImageDraw
 from tqdm import tqdm
-from pathlib import Path
-from collections import namedtuple
+
 from segmenter.dirs import data_dir, eval_dir, tmp_dir
 from segmenter.measure_detector import MeasureDetector
 from util.files import get_sorted_page_paths
 
+import json
+import numpy as np
+
 TrueSystem = namedtuple('TrueSystem', ['staffs', 'measures'])
 TruePage = namedtuple('TruePage', ['systems'])
+
+
+class NpEncoder(json.JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, np.integer):
+            return int(obj)
+        elif isinstance(obj, np.floating):
+            return float(obj)
+        elif isinstance(obj, np.ndarray):
+            return obj.tolist()
+        else:
+            return super(NpEncoder, self).default(obj)
 
 
 def construct_page_overlay(detector):
@@ -33,31 +50,41 @@ def draw_page(detector):
 
 
 def save_annotations(detectors, score_name, version):
-    annotations = ''
     for detector in detectors:
         page = detector.page
-        system_annotations = list(map(lambda system: str(len(system.staff_boundaries)) + ',' + str(len(system.measures)), page.systems))
-        annotations += ' '.join(system_annotations) + '\n'
-    file_path = Path(eval_dir, version, 'annotations', '{}_annotation_results.txt'.format(score_name)).resolve()
-    with open(file_path, 'w') as f:
-        f.write(annotations)
+        systems = []
+        for system in page.systems:
+            staffs = list(map(lambda staff: staff._asdict(), system.staffs))
+            system_measures = list(map(lambda system_measure: system_measure._asdict(), system.system_measures))
+            measures = list(map(lambda measure: measure._asdict(), system.measures))
+            system_bb = {k: system._asdict()[k] for k in ('ulx', 'uly', 'lrx', 'lry')}
+            systems.append({'staffs': staffs, 'system_measures': system_measures, 'measures': measures, **system_bb})
+        page_dict = {'height': page.height, 'width': page.width, 'rotation': page.rotation, 'systems': systems}
+        folder_path = Path(eval_dir, version, 'annotations', score_name)
+        folder_path.mkdir(parents=True, exist_ok=True)
+        file_path = folder_path / (page.name + '.json')
+        with open(file_path, 'w') as f:
+            f.write(json.dumps(page_dict, cls=NpEncoder, indent=4))
 
 
 def save_pages(detectors, score_name, version):
-    pdf_filename = Path(eval_dir, version, 'visualized', '{}_visualized.pdf'.format(score_name)).resolve()
+    folder_path = Path(eval_dir, version, 'visualized')
+    folder_path.mkdir(parents=True, exist_ok=True)
+    file_path = folder_path / (score_name + '_visualized.pdf')
     im1 = construct_page_overlay(detectors[0])
     im_list = []
     for i in range(1, len(detectors)):
         img = construct_page_overlay(detectors[i])
         im_list.append(img)
-    im1.save(pdf_filename, 'PDF', resolution=100.0, save_all=True, append_images=im_list)
+    im1.save(file_path, 'PDF', resolution=100.0, save_all=True, append_images=im_list)
 
 
-def detect(score_name, sys_method='lines', mode='run'):
-    if mode == 'debug':
-        page_path = Path(tmp_dir, 'temp').resolve()
-    else:
-        page_path = Path(data_dir, score_name, 'ppm-300').resolve()
+def detect(score_path, version, sys_method='lines', mode='run'):
+    score_name = score_path.split('/')[0]
+    # if mode == 'debug':
+    #     page_path = Path(tmp_dir, 'temp').resolve()
+    # else:
+    page_path = Path(data_dir, score_path).resolve()
     paths = get_sorted_page_paths(page_path)
     detectors = []
     for i, path in tqdm(enumerate(paths)):
@@ -72,13 +99,26 @@ def detect(score_name, sys_method='lines', mode='run'):
         save_pages(detectors, score_name, version)
 
 
-if __name__ == '__main__':
-    debug = True
-    version = 'current'
-    if debug:
+def detect_dataset(version, mode='run'):
+    if mode == 'debug':
         scores = ['debug']
     else:
         scores = ['Beethoven_Sextet', 'Beethoven_Septett', 'Debussy_La_Mer', 'Dukas_l_Apprenti_Sorcier', 'Haydn_Symphony_104_London', 'Mendelssohn_Psalm_42', 'Mozart_Symphony_31', 'Schubert_Symphony_4', 'Van_Bree_Allegro']
-        # scores = ['Beethoven_Sextet', 'Van_Bree_Allegro']
     for score in scores:
-        detect(score, sys_method='lines', mode=('debug' if debug is True else 'run'))
+        detect(score + '/ppm-300', version, mode=mode)
+
+
+def detect_measurebb(version):
+    scores = [p.stem for p in Path(data_dir, 'MeasureBoundingBoxAnnotations_v2').glob('*') if p.stem != 'coco']
+    for score in scores:
+        detect('MeasureBoundingBoxAnnotations_v2/' + score + '/img', version, mode='debug')
+
+
+if __name__ == '__main__':
+    debug = False
+    version = 'test_json'
+    dataset = 'measurebb'
+    if dataset == 'dataset':
+        detect_dataset(version, mode=('debug' if debug is True else 'run'))
+    elif dataset == 'measurebb':
+        detect_measurebb(version)

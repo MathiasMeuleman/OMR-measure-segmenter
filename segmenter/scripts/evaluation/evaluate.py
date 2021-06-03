@@ -1,5 +1,5 @@
 from collections import namedtuple
-from posixpath import join
+from pathlib import Path
 
 from segmenter.dirs import eval_dir
 
@@ -9,22 +9,36 @@ TruePage = namedtuple('TruePage', ['systems'])
 
 def compare_results(result_pages, true_pages, score_name, version):
     outputs = []
+    total_systems = correct_systems = total_staffs = correct_staffs = total_system_measures = correct_system_measures = 0
     if len(result_pages) == len(true_pages):
         for i, (true_page, result_page) in enumerate(zip(true_pages, result_pages)):
+            total_systems += 1
             if len(true_page.systems) == len(result_page.systems):
+                correct_systems += 1
                 for j, (true_system, result_system) in enumerate(zip(true_page.systems, result_page.systems)):
-                    if true_system.staffs != result_system.staffs:
-                        outputs.append('Staffs on page {}, system {} don\'t match: expected {} staffs, but found {} staffs'.format(i+1, j+1, true_system.staffs, result_system.staffs))
-                    if true_system.measures != result_system.measures:
-                        outputs.append('Measures on page {}, system {} don\'t match: expected {} measures, but found {} measures'.format(i + 1, j + 1, true_system.measures, result_system.measures))
+                    total_staffs += 1
+                    total_system_measures += 1
+                    if len(true_system.staffs) == len(result_system.staffs):
+                        correct_staffs += 1
+                    else:
+                        outputs.append('Staffs on page {}, system {} don\'t match: expected {} staffs, but found {} staffs'.format(i+1, j+1, len(true_system.staffs), len(result_system.staffs)))
+                    if len(true_system.system_measures) == len(result_system.system_measures):
+                        correct_system_measures += 1
+                    else:
+                        outputs.append('System measures on page {}, system {} don\'t match: expected {} measures, but found {} measures'.format(i + 1, j + 1, len(true_system.system_measures), len(result_system.system_measures)))
             else:
                 outputs.append('Systems on page {} don\'t match: expected {} systems, but found {} systems'.format(i+1, len(true_page.systems), len(result_page.systems)))
     else:
         outputs.append('Pages don\'t match: expected {} pages, but found {} pages'.format(len(true_pages), len(true_pages)))
     output = 'Test results {}:\n============='.format(score_name)
+    output += '\n' + 'System detection score:\t' + str(round(correct_systems / total_systems, 4) * 100) + '%'
+    output += '\n' + 'Staff detection score:\t' + str(round(correct_staffs / total_staffs, 4) * 100) + '%'
+    output += '\n' + 'System measure detection score:\t' + str(round(correct_system_measures / total_system_measures, 4) * 100) + '%'
     output += '\n' + '\n'.join(outputs) + '\n'
     print(output)
-    with open(join(eval_dir, version, 'results', '{}_evaluation_results.txt').format(score_name), 'w') as file:
+    output_dir = Path(eval_dir, version, 'results')
+    output_dir.mkdir(parents=True, exist_ok=True)
+    with open(output_dir / '{}_evaluation_results.txt'.format(score_name), 'w') as file:
         file.write(output)
 
 
@@ -34,11 +48,11 @@ def build_true_system(system_str):
 
 
 def evaluate(score_name, version):
-    with open(join(eval_dir, 'truth', '{}_annotations.txt'.format(score_name))) as file:
+    with open(Path(eval_dir, 'truth', '{}_annotations.txt'.format(score_name))) as file:
         baseline = [list(map(build_true_system, line.rstrip().split(' '))) for line in file]
     true_pages = list(map(lambda s: TruePage(systems=s), baseline))
 
-    with open(join(eval_dir, version, 'annotations', '{}_annotation_results.txt'.format(score_name))) as file:
+    with open(Path(eval_dir, version, 'annotations', '{}_annotation_results.txt'.format(score_name))) as file:
         results = [list(map(build_true_system, line.rstrip().split(' '))) for line in file]
     result_pages = list(map(lambda s: TruePage(systems=s), results))
 

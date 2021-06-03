@@ -2,3 +2,5 @@ __pycache__
 .idea/
 segmenter/cnn_segmenter/model.pb
 tmp/
+data/MeasureBoundingBoxAnnotations_v2/
+data/MUSCIMApp_v1.0/

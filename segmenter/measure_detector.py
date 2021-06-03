@@ -1,4 +1,5 @@
 from collections import namedtuple
+from pathlib import Path
 
 import cv2
 import matplotlib.pyplot as plt
@@ -12,11 +13,11 @@ from util.cv2_util import correct_image_rotation, find_horizontal_lines, find_ve
 np.set_printoptions(threshold=sys.maxsize)
 np.set_printoptions(linewidth=sys.maxsize)
 
-Page = namedtuple("Page", ["height", "width", "rotation", "systems"])
+Page = namedtuple("Page", ["name", "height", "width", "rotation", "systems"])
 System = namedtuple("System", ["ulx", "uly", "lrx", "lry", "staffs", "system_measures", "measures"])
-Measure = namedtuple("Measure", ["ulx", "uly", "lrx", "lry"])
+SystemMeasure = namedtuple("SystemMeasure", ["ulx", "uly", "lrx", "lry"])
 Staff = namedtuple("Staff", ["ulx", "uly", "lrx", "lry"])
-MeasurePart = namedtuple("MeasurePart", ["ulx", "uly", "lrx", "lry"])
+Measure = namedtuple("Measure", ["ulx", "uly", "lrx", "lry"])
 
 
 def contiguous_regions(condition):
@@ -270,15 +271,15 @@ class MeasureDetector:
             plt.title("Horizontal profile of system without staffs")
             plt.show()
 
-        measures = []
+        system_measures = []
         for i in range(len(measure_splits) - 1):
-            measures.append(Measure(
+            system_measures.append(SystemMeasure(
                 ulx=system.ulx + measure_splits[i],
                 uly=system.uly,
                 lrx=system.ulx + measure_splits[i + 1],
                 lry=system.lry,
             ))
-        return system._replace(system_measures=measures)
+        return system._replace(system_measures=system_measures)
 
     def find_measures(self, system):
         measures = []
@@ -370,12 +371,13 @@ class MeasureDetector:
         self.open_and_preprocess()
         height, width = self.bw.shape
         systems = self.find_systems_in_page(plot=plot)
-        populated_systems = []
+        processed_systems = []
         for system in systems:
             system = self.find_system_measures(system, plot=plot)
             system = self.find_system_staffs(system, method=sys_method, plot=plot)
             system = self.find_measures(system)
-            populated_systems.append(system)
-        page = Page(height=height, width=width, rotation=self.rotation, systems=populated_systems)
+            processed_systems.append(system)
+        name = Path(self.path).stem
+        page = Page(name=name, height=height, width=width, rotation=self.rotation, systems=processed_systems)
         self.page = page
         return self
