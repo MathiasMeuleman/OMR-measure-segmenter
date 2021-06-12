@@ -19,9 +19,9 @@ class ScoreMapper:
         self.annotations = None
         self.groupings = None
         self.log_to_file = log_to_file
-        self.logger = None
+        self.logger = self.get_logger()
 
-    def set_logger(self):
+    def get_logger(self):
         logger = logging.getLogger('scoremapper')
         if self.log_to_file:
             file_handler = logging.FileHandler(Path(self.directory) / 'output.log', 'w')
@@ -31,7 +31,7 @@ class ScoreMapper:
         stream_handler.setLevel('WARNING')
         logger.addHandler(stream_handler)
         logger.setLevel('DEBUG')
-        self.logger = logger
+        return logger
 
     def parse_page_specification(self, specification):
         if '-' in specification:
@@ -89,19 +89,26 @@ class ScoreMapper:
                 self.logger.info('{}: {}'.format(part.id, symbolic_measure_count[i]))
             raise AssertionError('Could not match total number of measures')
 
-    def load_annotations(self):
+    def get_score_path(self):
+        music_path = next((f for f in Path(self.directory).iterdir() if f.suffix in MUSIC_DATA_EXTENSIONS), None)
+        if not music_path.is_file():
+            raise FileNotFoundError('Could not find supported music data file in directory ' + str(self.directory))
+        return music_path
+
+    def get_annotations_path(self):
         annotations_path = Path(self.directory, 'annotations.txt')
         if not annotations_path.is_file():
             raise FileNotFoundError('Could not find annotations file in directory ' + str(self.directory))
+        return annotations_path
+
+    def load_annotations(self):
+        annotations_path = self.get_annotations_path()
         with open(annotations_path) as file:
             annotations = [list(map(lambda x: list(map(int, x.split(','))), line.rstrip().split(' '))) for line in file]
         self.annotations = annotations
 
     def load_score(self):
-        music_path = next((f for f in Path(self.directory).iterdir() if f.suffix in MUSIC_DATA_EXTENSIONS), None)
-        if not music_path.is_file():
-            raise FileNotFoundError('Could not find supported music data file in directory ' + str(self.directory))
-
+        music_path = self.get_score_path()
         self.logger.warning('Loading score found at: ' + str(music_path.resolve()))
         score = converter.parse(music_path)
         self.score = score
@@ -113,7 +120,6 @@ class ScoreMapper:
         # pprint(vars(celesta.measure(425).flattenUnnecessaryVoices(force=True).notes[0].))
 
     def init(self):
-        self.set_logger()
         self.load_score()
         self.load_annotations()
         self.parse_groupings()
@@ -211,13 +217,35 @@ class ScoreMapper:
         result = json.dumps({'pages': pages}, indent=2, sort_keys=True)
         with open(Path(self.directory) / 'score_mapping.json', 'w') as file:
             file.write(result)
+        return result
+
+    def get_matched_score(self):
+        annotations_path = self.get_annotations_path()
+        score_path = self.get_score_path()
+        groupings_path = Path(self.directory, 'groupings.txt')
+        mapping_path = Path(self.directory, 'score_mapping.json')
+        needs_match = True
+        if mapping_path.is_file():
+            mapping_mtime = mapping_path.stat().st_mtime
+            if annotations_path.stat().st_mtime < mapping_mtime and score_path.stat().st_mtime < mapping_mtime:
+                needs_match = False
+            if groupings_path.is_file() and groupings_path.stat().st_mtime < mapping_mtime:
+                needs_match = False
+        if needs_match:
+            self.init()
+            return self.match_score()
+        else:
+            self.logger.warning('Using existing mapping found at: {}'.format(mapping_path.resolve()))
+            with open(mapping_path) as file:
+                mapping = json.load(file)
+            return mapping
 
 
 def match_score(path):
     source = ScoreMapper(path, log_to_file=True)
-    source.init()
+    # source.init()
     # source.list_parts()
-    source.match_score()
+    source.get_matched_score()
 
 
 def match_page(path, page):
