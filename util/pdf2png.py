@@ -21,10 +21,10 @@ def convert_pdf_file(_path, out_path, first_page=1, last_page=-1):
         with tempfile.TemporaryDirectory() as outpath:
             images = pdf2image.convert_from_path(_path, dpi=300, output_folder=outpath, first_page=page, last_page=min(page + 10 - 1, max_pages))
             for image in images:
-                image.save(str((Path(out_path) / "transcript-{0}.png".format(index)).resolve()))
+                image.save(str((Path(out_path) / "page_{0}.png".format(index)).resolve()))
                 index += 1
 
 
 if __name__ == "__main__":
-    path = r"../data/Van_Bree_Allegro/IMSLP82485-PMLP136878-1602.Bree-Allegro4SQs.sc.pdf"
-    convert_pdf_file(path, out_path=r"../data/Van_Bree_Allegro/ppm-300")
+    path = r"../../OMR-measure-segmenter-data/musicdata/bach_brandenburg_concerto_5_part_1/IMSLP468680-PMLP82083-Brandemburghese_5.pdf"
+    convert_pdf_file(path, out_path=r"../../OMR-measure-segmenter-data/musicdata/bach_brandenburg_concerto_5_part_1/pages")
