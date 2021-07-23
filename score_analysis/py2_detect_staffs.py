@@ -4,7 +4,7 @@ IMPORTANT!! Only runs on Python 2.
 import json
 import sys
 from gamera.core import *
-from gamera.toolkits.musicstaves import stafffinder_dalitz
+from staff_finder_py2 import stafffinder_meuleman
 
 
 def detect_staffs(image_path, output_path):
@@ -12,8 +12,8 @@ def detect_staffs(image_path, output_path):
     image = load_image(image_path)
     image.to_onebit()
 
-    sf = stafffinder_dalitz.StaffFinder_dalitz(image)
-    sf.find_staves(num_lines=5)
+    sf = stafffinder_meuleman.StaffFinder_meuleman(image)
+    sf.find_staves(num_lines=0, debug=0)
 
     staves = sf.get_average()
     staff_points = [{'lines': [[[line.left_x, line.average_y], [line.right_x, line.average_y]] for line in staff]} for staff in staves]
