@@ -13,6 +13,7 @@ MUSIC_DATA_EXTENSIONS = ['.mxl', '.xml', '.musicxml']
 class ScoreMapper:
 
     def __init__(self, directory, log_to_file=False):
+        self.initialized = False
         self.directory = directory
         self.score = None
         self.parts = None
@@ -34,12 +35,15 @@ class ScoreMapper:
         return logger
 
     def parse_page_specification(self, specification):
+        if '.' in specification:
+            return [specification]
         if '-' in specification:
             start, end = list(map(int, specification.split('-')))[0:2]
             if start is None or end is None or start > end:
                 raise AssertionError('Invalid page specification: {}'.format(specification))
-            return list(range(start, end + 1))
-        return [int(specification)]
+            return ['{}.{}'.format(page, system + 1) for page in list(range(start, end + 1)) for system in range(len(self.annotations[page - 1]))]
+        page = int(specification)
+        return ['{}.{}'.format(page, system + 1) for system in range(len(self.annotations[page - 1]))]
 
     def parse_groupings(self):
         """
@@ -51,31 +55,36 @@ class ScoreMapper:
             "[start]-[end]" with both start and end inclusive. A page number or range of page numbers can be negated
             prepending an exclamation mark (!), indicating the grouping does not hold for the given page or range. Note
             that when page specifications are provided, the grouping is not applied to the entire score anymore.
+        - Page specifications can be extended to include or exclude specific systems on a page as well. These are
+            specified by a seperating dot (.).
         Example:
             Flute 1,Flute 2             # Flute 1 and Flute 2 are grouped throughout the entire score
             Oboe 1,Oboe 2:10,11,13      # Oboe 1 and Oboe 2 are grouped at pages 10, 11 and 13
             Bassoon 1,Bassoon 2:3-9,!5  # Bassoon 1 and Bassoon 2 are grouped at page 3 through 9 inclusive, but not 5
+            Violoncello,Basso:1-5,!2,!2.1
         """
         groupings_path = Path(self.directory, 'groupings.txt')
         if groupings_path.is_file():
             with open(groupings_path) as file:
                 lines = [line.rstrip() for line in file]
-            groupings = [[] for _ in self.annotations]
+            groupings = [[[] for _ in page] for page in self.annotations]
             for i, line in enumerate(lines):
                 grouping = line.split(':')[0].split(',')
                 if ':' in line:
                     page_specifications = line.split(':')[1].split(',')
-                    active_pages = [page for spec in page_specifications if not spec.startswith('!') for page in self.parse_page_specification(spec)]
+                    active_specs = [page for spec in page_specifications if not spec.startswith('!') for page in self.parse_page_specification(spec)]
                     exceptions = [page for spec in page_specifications if spec.startswith('!') for page in self.parse_page_specification(spec.split('!')[1])]
-                    pages = list(set(active_pages) - set(exceptions))
-                    for page in pages:
-                        groupings[page - 1].append(grouping)
+                    specs = list(set(active_specs) - set(exceptions))
+                    for spec in specs:
+                        page, system = list(map(int, spec.split('.')))
+                        groupings[page - 1][system - 1].append(grouping)
                 else:
                     for j in range(len(self.annotations)):
-                        groupings[j].append(grouping)
+                        for k in range(len(self.annotations[j])):
+                            groupings[j][k].append(grouping)
             self.groupings = groupings
         else:
-            self.groupings = [[] for _ in self.annotations]
+            self.groupings = [[[] for _ in self.annotations[i]] for i, _ in enumerate(self.annotations)]
 
     def check_count_measures(self):
         """
@@ -91,8 +100,10 @@ class ScoreMapper:
 
     def get_score_path(self):
         music_path = next((f for f in Path(self.directory).iterdir() if f.suffix in MUSIC_DATA_EXTENSIONS), None)
-        if not music_path.is_file():
-            raise FileNotFoundError('Could not find supported music data file in directory ' + str(self.directory))
+        if music_path is None or not music_path.is_file():
+            music_path = Path(self.directory) / 'stage2s'
+            if not music_path.is_dir():
+                raise FileNotFoundError('Could not find supported music data in directory ' + str(self.directory))
         return music_path
 
     def get_annotations_path(self):
@@ -115,21 +126,29 @@ class ScoreMapper:
         parts = score.recurse(classFilter='Part')
         self.parts = list(parts)
 
-        # celesta = parts.getElementById('P50-Staff2')
-        # empty_measures = [len(parts.getElementById('P50-Staff2').measure(425).voices), len(parts.getElementById('P50-Staff1').measure(427).voices)]
-        # pprint(vars(celesta.measure(425).flattenUnnecessaryVoices(force=True).notes[0].))
-
     def init(self):
+        if self.initialized:
+            return
         self.load_score()
         self.load_annotations()
         self.parse_groupings()
         self.check_count_measures()
+        self.initialized = True
 
     def list_parts(self):
         if self.score is None:
             raise AssertionError('Score not loaded')
         self.logger.info('\n'.join([str({'id': part.id, 'name': part.partName}) for part in self.parts]))
 
+    @staticmethod
+    def get_part_measures(part, start, end):
+        return part.measures(start, end, collect=[], gatherSpanners=False, indicesNotNumbers=True)
+
+    @staticmethod
+    def measure_is_empty(measure):
+        return len([note
+                    for note in (measure.flattenUnnecessaryVoices(force=True) if len(measure.voices) > 0 else measure).notes
+                    if note._style is None or note._style.hideObjectOnPrint is not True]) <= 0
 
     @staticmethod
     def grouped_parts_is_empty(grouped_parts, start, end):
@@ -139,29 +158,27 @@ class ScoreMapper:
         flattened, since notes in measures are only counted when they are top-level. Note visibility is checked through
         the `hideObjectOnPrint` option in the NoteStyle object, if set to `True`, the note is ignored.
         """
-        return not any(len([note
-                            for note in (m.flattenUnnecessaryVoices(force=True) if len(m.voices) > 0 else m).notes
-                            if note._style is None or note._style.hideObjectOnPrint is not True]) > 0
+        return all(ScoreMapper.measure_is_empty(measure)
                        for part in grouped_parts
-                       for m in part.measures(start, end, collect=[], gatherSpanners=False, indicesNotNumbers=True))
+                       for measure in ScoreMapper.get_part_measures(part, start, end))
 
     @staticmethod
-    def generate_annotated_part_group(part_group, measure_count):
-        return {'parts': [{'id': part.id, 'name': part.partName} for part in part_group], 'measures': measure_count}
+    def generate_annotated_part_group(part_group):
+        return {'parts': [{'id': part.id, 'name': part.partName} for part in part_group]}
 
-    def get_part_groups(self, page):
+    def get_part_groups(self, page, system):
         part_groups = []
-        for grouping in self.groupings[page]:
+        for grouping in self.groupings[page][system]:
             group_parts = [part for part in self.parts if part.id in grouping]
             part_groups.append(group_parts)
-        grouped_ids = [id for ids in self.groupings[page] for id in ids]
+        grouped_ids = [id for ids in self.groupings[page][system] for id in ids]
         single_parts = [[part] for part in self.parts if part.id not in grouped_ids]
         part_groups.extend(single_parts)
         return part_groups
 
     def match_system(self, page_idx, system_idx, start):
         page_nr, system_nr = page_idx + 1, system_idx + 1
-        part_groups = self.get_part_groups(page_idx)
+        part_groups = self.get_part_groups(page_idx, system_idx)
         (part_count, measure_count) = self.annotations[page_idx][system_idx]
         empty_part_groups, non_empty_part_groups = [], []
         for group in part_groups:
@@ -175,8 +192,8 @@ class ScoreMapper:
                                  .format(len(non_empty_part_groups), part_count, page_nr, system_nr, start))
         if len(non_empty_part_groups) < part_count:
             self.logger.info('Found {} empty staffs at page {}, system {}'.format(part_count - len(non_empty_part_groups), page_nr, system_nr))
-        matches = [self.generate_annotated_part_group(grouped_part, measure_count) for grouped_part in non_empty_part_groups]
-        matches.extend([{'parts': None, 'measures': measure_count} for _ in range(part_count - len(non_empty_part_groups))])
+        matches = [self.generate_annotated_part_group(grouped_part) for grouped_part in non_empty_part_groups]
+        matches.extend([{'parts': None} for _ in range(part_count - len(non_empty_part_groups))])
         return matches
 
     def match_page(self, page_number):
@@ -210,7 +227,7 @@ class ScoreMapper:
             for j, (voices, measures) in enumerate(page):
                 system_number = j + 1
                 matched_parts = self.match_system(i, j, current_measure)
-                systems.append({'systemNumber': system_number, 'parts': matched_parts})
+                systems.append({'systemNumber': system_number, 'staffs': matched_parts, 'measureStart': current_measure, 'measureEnd': current_measure + measures})
                 current_measure += measures
             pages.append({'pageNumber': page_number, 'systems': systems})
 
@@ -240,12 +257,39 @@ class ScoreMapper:
                 mapping = json.load(file)
             return mapping
 
+    def get_measure_count(self):
+        self.init()
+        mapping = self.get_matched_score()
+        symbolic_measures = sum([len(part.recurse(classFilter='Measure')) for part in self.parts])
+        measures_count = sum([
+            (int(system['measureEnd']) - int(system['measureStart'])) * len(system['staffs'])
+            for page in mapping['pages']
+            for system in page['systems']
+        ])
+        part_map = {part.id: part for part in self.parts}
+        empty_measures = 0
+        for page in mapping['pages']:
+            for system in page['systems']:
+                start, end = int(system['measureStart']), int(system['measureEnd'])
+                for staff in system['staffs']:
+                    if staff['parts'] is None:
+                        empty_measures += (end - start)
+                    else:
+                        parts_group = [part_map[part['id']] for part in staff['parts']]
+                        empty_measures += sum([self.grouped_parts_is_empty(parts_group, start, start + 1) for start in range(start, end)])
+        return {
+            'symbolic': symbolic_measures,
+            'written': measures_count,
+            'empty': empty_measures
+        }
+
 
 def match_score(path):
     source = ScoreMapper(path, log_to_file=True)
-    # source.init()
+    source.init()
     # source.list_parts()
-    source.get_matched_score()
+    source.match_score()
+    # source.get_matched_score()
 
 
 def match_page(path, page):
@@ -254,16 +298,37 @@ def match_page(path, page):
     source.match_page(page)
 
 
+def count_measures(path):
+    source = ScoreMapper(path)
+    print(source.get_measure_count())
+
+
 if __name__ == '__main__':
     part_directories = [
         'bach_brandenburg_concerto_5_part_1',
+        'beethoven_symphony_1/part_1',
+        'beethoven_symphony_1/part_2',
+        'beethoven_symphony_1/part_3',
+        'beethoven_symphony_1/part_4',
+        'beethoven_symphony_2/part_1',
+        'beethoven_symphony_2/part_2',
+        'beethoven_symphony_2/part_3',
+        'beethoven_symphony_2/part_4',
+        'beethoven_symphony_3/part_1',
+        'beethoven_symphony_3/part_2',
+        'beethoven_symphony_3/part_3',
+        'beethoven_symphony_3/part_4',
+        'beethoven_symphony_4/part_1',
+        'beethoven_symphony_4/part_2',
         'holst_the_planets',
+        'mahler_symphony_4',
         'mozart_symphony_41',
         'tchaikovsky_ouverture_1812/edition_1',
         'temp'
     ]
 
     musicdata_directory = Path(root_dir).parent / 'OMR-measure-segmenter-data/musicdata'
-    path = musicdata_directory / part_directories[0]
+    path = musicdata_directory / part_directories[-3]
     match_score(path)
     # match_page(path, 41)
+    # count_measures(path)
