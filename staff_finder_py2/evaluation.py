@@ -3,6 +3,8 @@ import time
 from itertools import product
 from os import walk
 from os.path import dirname, join, realpath
+from threading import Thread
+from multiprocessing import Process, Queue
 
 from gamera.core import load_image, init_gamera, ONEBIT
 from gamera.toolkits.musicstaves.plugins.evaluation import segment_error, interruption_error
@@ -12,11 +14,11 @@ from gamera.toolkits.musicstaves.musicstaves_skeleton import MusicStaves_skeleto
 from gamera.toolkits.musicstaves.stafffinder_dalitz import StaffFinder_dalitz
 from gamera.toolkits.musicstaves.stafffinder_meuleman import StaffFinder_meuleman
 
-img_switch = False
-deform_switch = False
+img_switch = True
+deform_switch = True
 alg_switch = True
-staff_switch = False
-error_switch = False
+staff_switch = True
+error_switch = True
 
 # -----------------
 # Input images
@@ -32,7 +34,7 @@ if img_switch:
             base_name = '.'.join(img.split('.')[0:-1])
             input_images.append((join(cat, base_name + '.png'), join(cat, base_name + '-nostaff.png')))
 else:
-    input_images = [('modern/diabelli.png', 'modern/diabelli-nostaff.png')]
+    input_images = [('historic/ockeghem.png', 'historic/ockeghem-nostaff.png')]
 
 # ------------------
 # Deformation methods
@@ -51,8 +53,7 @@ if deform_switch:
     }
 else:
     deformations = {
-        # 'rotation': {'angle': range(-18, 18, 9)},
-        'no-deform': {},
+        'curvature': {'ampx': [0.1]},
     }
 
 deformation_sets = {}
@@ -75,7 +76,8 @@ if alg_switch:
     ]
 else:
     algorithms = [
-        {'name': 'linetracking_height', 'method': MusicStaves_linetracking, 'args': {'symbol_criterion': 'runlength'}},
+        # {'name': 'linetracking_height', 'method': MusicStaves_linetracking, 'args': {'symbol_criterion': 'runlength'}},
+        {'name': 'roach_tatem_improved', 'method': MusicStaves_rl_roach_tatem, 'args': {'postprocessing': True}},
     ]
 
 # --------------------
@@ -88,7 +90,7 @@ if staff_switch:
     ]
 else:
     staff_finders = [
-        {'name': 'Dalitz', 'method': StaffFinder_dalitz},
+        {'name': 'Meuleman', 'method': StaffFinder_meuleman}
     ]
 
 # --------------------
@@ -103,6 +105,12 @@ if error_switch:
 else:
     error_metrics = ['pixel']
 
+# Skip all iterations until all these are met
+start_params = {
+    'infile': 'historic/ockeghem.png',
+    'deformation': 'staffline_thickness_variation',
+    'params': {'max': 5},
+}
 
 def get_num_lines_arg(staff_finder_name, infile):
     if staff_finder_name == 'Meuleman':
@@ -139,12 +147,68 @@ def apply_error_metric(image, Gstaves, Sstaves, skel_list, metric):
         return dict(zip(keys, result))
 
 
+start_fullfilled = {k: False for k in start_params.keys()}
+
+
+def check_start_param(name, value):
+    if name in start_params and start_fullfilled[name] is False:
+        if name == 'params':
+            # Dict structure
+            for k in start_params[name]:
+                if start_params[name][k] != value[k]:
+                    return False
+            return True
+        if value != start_params[name]:
+            return False
+        else:
+            start_fullfilled[name] = True
+            return True
+    return True
+
+
+def run_thread(queue, infile, nostaves_infile, deformed_img, deformed_staffs, skel_list, method, params, removal_algorithm, staff_finder):
+    print('\tStaff removal alg ' + removal_algorithm['name'] + ' with ' + staff_finder['name'] + '...')
+    start = time.clock()
+    ms = removal_algorithm['method'](deformed_img, stafffinder=staff_finder['method'])
+    args = removal_algorithm['args']
+    args['num_lines'] = get_num_lines_arg(staff_finder['name'], infile)
+    ms.remove_staves(**args)
+    Gstaves = deformed_staffs
+    Sstaves = deformed_img.subtract_images(ms.image)
+    end = time.clock()
+    for metric in error_metrics:
+        error = apply_error_metric(deformed_img, Gstaves, Sstaves, skel_list, metric)
+
+        result = {
+            'infile': infile,
+            'nostaves': nostaves_infile,
+            'deformation': method,
+            'algorithm': removal_algorithm['name'],
+            'staff_finder': staff_finder['name'],
+            'metric': metric,
+            'error': error,
+            'time': end - start,
+        }
+        for k, v in params.iteritems():
+            result[k] = v
+        queue.put(result)
+    print('\t [DONE] ' + removal_algorithm['name'] + ' with ' + staff_finder['name'])
+
+
 init_gamera()
 results = []
+queue = Queue()
 for (infile, nostaves_infile) in input_images:
+    if not check_start_param('infile', infile):
+        continue
     for method in deformation_sets.keys():
+        if not check_start_param('method', method):
+            continue
         for params in deformation_sets[method]:
+            if not check_start_param('params', params):
+                continue
             print('Deforming ' + infile + ' with params ' + str(params) + '...')
+            thread_list = []
             image = load_image(join(test_dir, infile))
             nostaves = load_image(join(test_dir, nostaves_infile))
             if image.data.pixel_type != ONEBIT:
@@ -154,34 +218,19 @@ for (infile, nostaves_infile) in input_images:
             image_staff_only = image.subtract_images(nostaves)
             [deformed_img, deformed_staffs, skel_list] = deform_image(image, image_staff_only, method, params)
             for removal_algorithm in algorithms:
-                for staff_finder in staff_finders:
-                    # deformed_img.save_PNG('_'.join([infile, method, str(params), removal_algorithm['name'], staff_finder['name']]) + '.png')
-                    print('\tStaff removal alg ' + removal_algorithm['name'] + ' with ' + staff_finder['name'] + '...')
-                    start = time.clock()
-                    ms = removal_algorithm['method'](deformed_img, stafffinder=staff_finder['method'])
-                    args = removal_algorithm['args']
-                    args['num_lines'] = get_num_lines_arg(staff_finder['name'], infile)
-                    ms.remove_staves(**args)
-                    Gstaves = deformed_staffs
-                    Sstaves = deformed_img.subtract_images(ms.image)
-                    end = time.clock()
-                    for metric in error_metrics:
-                        error = apply_error_metric(deformed_img, Gstaves, Sstaves, skel_list, metric)
-
-                        result = {
-                            'infile': infile,
-                            'nostaves': nostaves_infile,
-                            'deformation': method,
-                            'algorithm': removal_algorithm['name'],
-                            'staff_finder': staff_finder['name'],
-                            'metric': metric,
-                            'error': error,
-                            'time': end - start,
-                        }
-                        for k, v in params.iteritems():
-                            result[k] = v
-                        results.append(result)
-                        print(result)
+                selected_staff_finders = [staff_finders[0]] if removal_algorithm['name'] == 'roach_tatem_original' else staff_finders
+                for staff_finder in selected_staff_finders:
+                    thread = Process(target=run_thread, args=(queue, infile, nostaves_infile, deformed_img, deformed_staffs, skel_list, method, params, removal_algorithm, staff_finder))
+                    thread_list.append(thread)
+                    thread.start()
+            # Wait for all threads to finish
+            for thread in thread_list:
+                thread.join()
+            while not queue.empty():
+                results.append(queue.get())
+            print results
+            with open(join(test_dir, 'evaluation_results.json'), 'w') as file:
+                file.write(json.dumps({'results': results}, indent=2, sort_keys=True))
 
 with open(join(test_dir, 'evaluation_results.json'), 'w') as file:
     file.write(json.dumps({'results': results}, indent=2, sort_keys=True))
