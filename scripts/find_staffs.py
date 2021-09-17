@@ -3,13 +3,14 @@ from score_analysis.staff_verifyer import StaffVerifyer
 from pathlib import Path
 
 if __name__ == '__main__':
-    data_dir = Path(__file__).absolute().parent.parent.parent / 'OMR-measure-segmenter-data/musicdata'
-    score_dir = data_dir / 'tchaikovsky_ouverture_1812/edition_1'
-    # score_dir = data_dir / 'mozart_symphony_41'
-    # page = 5
-    # StaffDetector(score_dir).run_py2_detect_staffs(score_dir / 'pages' / 'page_{}.png'.format(page), score_dir / 'staffs' / 'page_{}.json'.format(page))
-    # StaffDetector(score_dir).detect_staffs()
-    verifyer = StaffVerifyer(score_dir)
-    # verifyer.overlay_page_staffs(page)
-    # verifyer.overlay_staffs()
-    verifyer.verify_staffs()
+    data_dir = Path(__file__).absolute().parents[2] / 'OMR-measure-segmenter-data/musicdata'
+    score_dirs = [dir for dir in data_dir.iterdir() if dir.is_dir()]
+    part_dirs = [list(dir.glob('part_*/')) if dir.name.startswith('beethoven') else [dir] for dir in score_dirs]
+    part_dirs = [part for parts in part_dirs for part in parts]
+    for score_dir in part_dirs:
+        for staff_finder in ['Meuleman']:
+            StaffDetector(score_dir, staff_finder).detect_staffs()
+            staffs_path = score_dir / 'staffs' / staff_finder
+            overlay_path = score_dir / 'staff_overlays' / staff_finder
+            verifyer = StaffVerifyer(score_dir, staffs_path=staffs_path, overlay_path=overlay_path)
+            verifyer.generate_staff_overlays_pdf()
