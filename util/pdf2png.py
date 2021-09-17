@@ -17,7 +17,7 @@ def convert_pdf_file(_path, out_path, first_page=1, last_page=-1):
     if last_page > 0:
         max_pages = min(max_pages, last_page)
     index = first_page
-    for page in tqdm(range(first_page, max_pages, 10)):
+    for page in tqdm(range(first_page, max_pages + 1, 10)):
         with tempfile.TemporaryDirectory() as outpath:
             images = pdf2image.convert_from_path(_path, dpi=300, output_folder=outpath, first_page=page, last_page=min(page + 10 - 1, max_pages))
             for image in images:
@@ -26,5 +26,5 @@ def convert_pdf_file(_path, out_path, first_page=1, last_page=-1):
 
 
 if __name__ == "__main__":
-    path = r"../../OMR-measure-segmenter-data/musicdata/bach_brandenburg_concerto_5_part_1/IMSLP468680-PMLP82083-Brandemburghese_5.pdf"
-    convert_pdf_file(path, out_path=r"../../OMR-measure-segmenter-data/musicdata/bach_brandenburg_concerto_5_part_1/pages")
+    path = r"../../OMR-measure-segmenter-data/musicdata/beethoven_symphony_2/IMSLP503997-PMLP2580-combinepdf.pdf"
+    convert_pdf_file(path, out_path=r"../../OMR-measure-segmenter-data/musicdata/beethoven_symphony_2/pages")
