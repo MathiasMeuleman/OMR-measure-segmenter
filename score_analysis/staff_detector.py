@@ -6,8 +6,9 @@ from util.pdf2png import convert_pdf_file
 
 class StaffDetector:
 
-    def __init__(self, directory):
+    def __init__(self, directory, staff_finder):
         self.directory = directory
+        self.staff_finder = staff_finder
 
     def get_score_path(self):
         score_path = next((f for f in Path(self.directory).iterdir() if f.suffix == '.pdf'), None)
@@ -25,14 +26,14 @@ class StaffDetector:
 
     def run_py2_detect_staffs(self, image_path, output_path):
         detect_staffs_path = (Path(__file__).parent / 'py2_detect_staffs.py').absolute()
-        subprocess.run(['/usr/bin/python', detect_staffs_path, image_path.absolute(), output_path.absolute()])
+        subprocess.run(['/usr/bin/python', detect_staffs_path, image_path.absolute(), output_path.absolute(), self.staff_finder])
 
     def detect_staffs(self):
         self.verify_pages_exist()
-        staffs_path = Path(self.directory) / 'staffs'
+        staffs_path = Path(self.directory) / 'staffs' / self.staff_finder
         pages_path = Path(self.directory) / 'pages'
         if not staffs_path.is_dir():
-            staffs_path.mkdir()
+            staffs_path.mkdir(parents=True)
         for i in tqdm(range(len(list(pages_path.iterdir())))):
             self.run_py2_detect_staffs(pages_path / 'page_{}.png'.format(i+1), staffs_path / 'page_{}.json'.format(i+1))
 
