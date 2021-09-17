@@ -1,15 +1,13 @@
+import json
 from collections import namedtuple
-from pathlib import Path
 
+import numpy as np
 from PIL import Image, ImageColor, ImageDraw
 from tqdm import tqdm
 
-from segmenter.dirs import data_dir, eval_dir, tmp_dir
 from segmenter.measure_detector import MeasureDetector
+from util.dirs import eval_dir, data_dir
 from util.files import get_sorted_page_paths
-
-import json
-import numpy as np
 
 TrueSystem = namedtuple('TrueSystem', ['staffs', 'measures'])
 TruePage = namedtuple('TruePage', ['systems'])
@@ -60,7 +58,7 @@ def save_annotations(detectors, score_name, version):
             system_bb = {k: system._asdict()[k] for k in ('ulx', 'uly', 'lrx', 'lry')}
             systems.append({'staffs': staffs, 'system_measures': system_measures, 'measures': measures, **system_bb})
         page_dict = {'height': page.height, 'width': page.width, 'rotation': page.rotation, 'systems': systems}
-        folder_path = Path(eval_dir, version, 'annotations', score_name)
+        folder_path = eval_dir / version / 'annotations' / score_name
         folder_path.mkdir(parents=True, exist_ok=True)
         file_path = folder_path / (page.name + '.json')
         with open(file_path, 'w') as f:
@@ -68,7 +66,7 @@ def save_annotations(detectors, score_name, version):
 
 
 def save_pages(detectors, score_name, version):
-    folder_path = Path(eval_dir, version, 'visualized')
+    folder_path = eval_dir / version / 'visualized'
     folder_path.mkdir(parents=True, exist_ok=True)
     file_path = folder_path / (score_name + '_visualized.pdf')
     im1 = construct_page_overlay(detectors[0])
@@ -81,10 +79,7 @@ def save_pages(detectors, score_name, version):
 
 def detect(score_path, version, sys_method='lines', mode='run'):
     score_name = score_path.split('/')[0]
-    # if mode == 'debug':
-    #     page_path = Path(tmp_dir, 'temp').resolve()
-    # else:
-    page_path = Path(data_dir, score_path).resolve()
+    page_path = data_dir / score_path
     paths = get_sorted_page_paths(page_path)
     detectors = []
     for i, path in tqdm(enumerate(paths)):
@@ -109,7 +104,7 @@ def detect_dataset(version, mode='run'):
 
 
 def detect_measurebb(version):
-    scores = [p.stem for p in Path(data_dir, 'MeasureBoundingBoxAnnotations_v2').glob('*') if p.stem != 'coco']
+    scores = [p.stem for p in (data_dir / 'MeasureBoundingBoxAnnotations_v2').glob('*') if p.stem != 'coco']
     for score in scores:
         detect('MeasureBoundingBoxAnnotations_v2/' + score + '/img', version, mode='debug')
 

@@ -2,10 +2,10 @@ import json
 import logging
 from music21 import converter
 from pathlib import Path
-from segmenter.dirs import root_dir
 from pprint import pprint
 from tqdm import tqdm
 
+from util.dirs import musicdata_dir
 
 MUSIC_DATA_EXTENSIONS = ['.mxl', '.xml', '.musicxml']
 
@@ -14,7 +14,7 @@ class ScoreMapper:
 
     def __init__(self, directory, log_to_file=False):
         self.initialized = False
-        self.directory = directory
+        self.directory = Path(directory)
         self.score = None
         self.parts = None
         self.annotations = None
@@ -25,7 +25,7 @@ class ScoreMapper:
     def get_logger(self):
         logger = logging.getLogger('scoremapper')
         if self.log_to_file:
-            file_handler = logging.FileHandler(Path(self.directory) / 'output.log', 'w')
+            file_handler = logging.FileHandler(self.directory / 'output.log', 'w')
             file_handler.setLevel('INFO')
             logger.addHandler(file_handler)
         stream_handler = logging.StreamHandler()
@@ -63,7 +63,7 @@ class ScoreMapper:
             Bassoon 1,Bassoon 2:3-9,!5  # Bassoon 1 and Bassoon 2 are grouped at page 3 through 9 inclusive, but not 5
             Violoncello,Basso:1-5,!2,!2.1
         """
-        groupings_path = Path(self.directory, 'groupings.txt')
+        groupings_path = self.directory / 'groupings.txt'
         if groupings_path.is_file():
             with open(groupings_path) as file:
                 lines = [line.rstrip() for line in file]
@@ -101,15 +101,15 @@ class ScoreMapper:
             raise AssertionError('Could not match total number of measures')
 
     def get_score_path(self):
-        music_path = next((f for f in Path(self.directory).iterdir() if f.suffix in MUSIC_DATA_EXTENSIONS), None)
+        music_path = next((f for f in self.directory.iterdir() if f.suffix in MUSIC_DATA_EXTENSIONS), None)
         if music_path is None or not music_path.is_file():
-            music_path = Path(self.directory) / 'stage2s'
+            music_path = self.directory / 'stage2s'
             if not music_path.is_dir():
                 raise FileNotFoundError('Could not find supported music data in directory ' + str(self.directory))
         return music_path
 
     def get_annotations_path(self):
-        annotations_path = Path(self.directory, 'annotations.txt')
+        annotations_path = self.directory / 'annotations.txt'
         if not annotations_path.is_file():
             raise FileNotFoundError('Could not find annotations file in directory ' + str(self.directory))
         return annotations_path
@@ -234,15 +234,15 @@ class ScoreMapper:
             pages.append({'pageNumber': page_number, 'systems': systems})
 
         result = json.dumps({'pages': pages}, indent=2, sort_keys=True)
-        with open(Path(self.directory) / 'score_mapping.json', 'w') as file:
+        with open(self.directory / 'score_mapping.json', 'w') as file:
             file.write(result)
         return result
 
     def get_matched_score(self):
         annotations_path = self.get_annotations_path()
         score_path = self.get_score_path()
-        groupings_path = Path(self.directory, 'groupings.txt')
-        mapping_path = Path(self.directory, 'score_mapping.json')
+        groupings_path = self.directory / 'groupings.txt'
+        mapping_path = self.directory / 'score_mapping.json'
         needs_match = True
         if mapping_path.is_file():
             mapping_mtime = mapping_path.stat().st_mtime
@@ -353,8 +353,7 @@ if __name__ == '__main__':
         'mahler_symphony_4',
     ]
 
-    musicdata_directory = Path(root_dir).parent / 'OMR-measure-segmenter-data/musicdata'
-    path = musicdata_directory / part_directories[-1]
+    path = musicdata_dir / part_directories[-1]
     match_score(path)
     # match_page(path, 41)
     # count_measures(path)

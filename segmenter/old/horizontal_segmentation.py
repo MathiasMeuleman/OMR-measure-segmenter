@@ -1,8 +1,7 @@
 import cv2
 import numpy as np
 import matplotlib.pyplot as plt
-from pathlib import Path
-from posixpath import join
+from util.dirs import data_dir
 
 
 def auto_skew_image(_img, draw=False):
@@ -39,16 +38,12 @@ def auto_skew_image(_img, draw=False):
 
 
 def load_and_deskew(page):
-    deskew_path = join(Path(__file__).parent.absolute(), 'data/ppm-600-deskewed/transcript-{}.png'.format(page))
-    if Path(deskew_path).exists():
-        img = cv2.imread(deskew_path, cv2.IMREAD_GRAYSCALE)
-        return img
-    else:
-        path = join(Path(__file__).parent.absolute(), 'data/ppm-600/transcript-{}.png'.format(page))
-        img = cv2.imread(path)
-        deskewed, M = auto_skew_image(img.copy(), draw=False)
-        cv2.imwrite(deskew_path, deskewed)
-        return deskewed
+    path = data_dir / 'Beethoven_Septett/ppm-300'
+    input_path = path / 'transcript-{}.png'.format(page)
+    img = cv2.imread(input_path)
+    deskewed, M = auto_skew_image(img.copy(), draw=False)
+    cv2.imwrite(path / 'transcript-{}-deskewed.png'.format(page), deskewed)
+    return deskewed
 
 
 def consecutive(data, stepsize=1):

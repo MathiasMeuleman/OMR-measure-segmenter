@@ -3,15 +3,18 @@ from PIL import Image, ImageColor, ImageDraw
 from pathlib import Path
 from tqdm import tqdm
 
+from util.dirs import musicdata_dir
+
 
 class StaffVerifyer:
 
     def __init__(self, directory, staffs_path=None, overlay_path=None):
-        self.directory = directory
-        self.mapping_path = Path(directory) / 'score_mapping.json'
-        self.staffs_path = Path(directory) / 'staffs' if staffs_path is None else staffs_path
-        self.pages_path = Path(directory) / 'pages'
-        self.overlay_path = Path(directory) / 'staff_overlays' if overlay_path is None else overlay_path
+        path_directory = Path(directory)
+        self.directory = path_directory
+        self.mapping_path = path_directory / 'score_mapping.json'
+        self.staffs_path = path_directory / 'staffs' if staffs_path is None else staffs_path
+        self.pages_path = path_directory / 'pages'
+        self.overlay_path = path_directory / 'staff_overlays' if overlay_path is None else overlay_path
 
     def overlay_page_staffs(self, pagenumber):
         page_name = 'page_{}'.format(pagenumber)
@@ -84,6 +87,5 @@ class StaffVerifyer:
 
 
 if __name__ == '__main__':
-    data_dir = Path(__file__).absolute().parent.parent.parent / 'OMR-measure-segmenter-data/musicdata'
-    score_dir = data_dir / 'brahms_symphony_3'
+    score_dir = musicdata_dir / 'brahms_symphony_3'
     StaffVerifyer(score_dir).generate_staff_overlays_pdf()

@@ -1,6 +1,4 @@
 import io
-from pathlib import Path
-from posixpath import join
 from statistics import median
 
 import cv2
@@ -11,8 +9,8 @@ from scipy.signal import find_peaks
 from skimage.filters import threshold_otsu
 
 from segmenter.old.image_util import resize_img
-from segmenter.dirs import data_dir
 from util.cv2_util import preprocess
+from util.dirs import data_dir
 
 
 def show_cv2_image(images, names, wait_for_input=True):
@@ -174,7 +172,7 @@ def horizontal_segmentation(_img, hor_hist, hthres):
 def segment_measures(pages):
     for idx in pages:
         page = 76 + idx
-        path = join(Path(__file__).parent.absolute(), 'data/ppm-600/transcript-{}.png'.format(page))
+        path = data_dir / 'Beethoven_Septett/ppm-300/transcript-{}.png'.format(page)
         img = cv2.imread(path)
         rotated = auto_skew_image(img.copy(), draw=False)
 
@@ -235,6 +233,6 @@ def detect_systems(image):
 if __name__ == "__main__":
     pages = [1, 76]
     for page in pages:
-        img = Image.open(join(data_dir, 'ppm-600/transcript-{}.png'.format(page)))
+        img = Image.open(data_dir / 'ppm-600/transcript-{}.png'.format(page))
         img = preprocess(np.asarray(img))
         detect_systems(img)

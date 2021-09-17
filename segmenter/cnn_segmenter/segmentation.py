@@ -1,14 +1,14 @@
-import warnings
 from functools import cmp_to_key
-from posixpath import join
+from pathlib import Path
 
 import numpy as np
 import tensorflow as tf
+import warnings
 from PIL import Image
 
 from segmenter.old.image_util import overlay_segments
-from segmenter.dirs import root_dir, data_dir
 from util.cv2_util import preprocess
+from util.dirs import data_dir, root_dir
 
 warnings.filterwarnings('ignore')
 
@@ -186,21 +186,21 @@ def measures_to_numpy(measures):
     return measures_np
 
 
-def segment(page, img_source_dir=join(data_dir, 'ppm-600'), measure_output_dir=join(data_dir, 'ppm-600-segments')):
+def segment(page, img_source_dir=data_dir / 'ppm-600', measure_output_dir=data_dir / 'ppm-600-segments'):
     """
     Segments a given page into measures. The individual measure boundaries are stored in a npz file
     :return:
     """
-    path = join(img_source_dir, 'transcript-{}.png'.format(page))
+    path = Path(img_source_dir / 'transcript-{}.png'.format(page))
     image = Image.open(path)
     segmented = segment_image(np.asarray(image))
     measures = measures_to_numpy(segmented['measures'])
-    np.save(join(measure_output_dir, 'transcript-{}.npy'.format(page)), measures)
+    np.save(Path(measure_output_dir / 'transcript-{}.npy'.format(page)), measures)
 
 
 def main():
-    img_dir = join(data_dir, 'Mahler_Symphony_1/ppm-600')
-    measure_dir = join(root_dir, 'tmp/Mahler_Symphony_1/ppm-600-segments')
+    img_dir = data_dir / 'Mahler_Symphony_1/ppm-600'
+    measure_dir = root_dir / 'tmp/Mahler_Symphony_1/ppm-600-segments'
     for page in range(1, 30):
         segment(page, img_source_dir=img_dir, measure_output_dir=measure_dir)
         overlay_segments(page, img_source_dir=img_dir, measures_source_dir=measure_dir)

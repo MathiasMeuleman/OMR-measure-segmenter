@@ -7,6 +7,8 @@ from multiprocessing import Pool
 from score_analysis.staff_verifyer import StaffVerifyer
 import matplotlib.pyplot as plt
 
+from util.dirs import stafffinder_testset_dir
+
 deformations = {
     'no-deform': {},
     # 'rotation': {'angle': range(-18, 19)},
@@ -29,12 +31,11 @@ for k, v in deformations.items():
 
 
 def get_filepaths():
-    test_dir = Path(__file__).parents[2] / 'OMR-measure-segmenter-data/stafffinder-testset'
     test_cats = ['historic', 'modern', 'tablature']
     input_images = []
     for cat in test_cats:
-        png_files = list((test_dir / cat).glob('*.png'))
-        input_images.extend([f for f in png_files if not 'nostaff' in f.name])
+        png_files = list((stafffinder_testset_dir / cat).glob('*.png'))
+        input_images.extend([f for f in png_files if 'nostaff' not in f.name])
     return input_images
 
 
@@ -49,7 +50,7 @@ def get_num_lines_arg(staff_finder_name, infile):
 
 
 def draw_no_deform_staffs():
-    directory = Path(__file__).parents[2] / 'OMR-measure-segmenter-data/stafffinder-testset/tablature'
+    directory = stafffinder_testset_dir / 'tablature'
     staffs_path = directory.parent / 'testset_staffs_no-deform'
     for staff_finder in ['Dalitz', 'Dalitz_0', 'Meuleman']:
         overlay_path = directory.parent / ('testset_no-deform_overlays_' + staff_finder)
@@ -69,7 +70,7 @@ def run_py2_deform_and_detect_staffs(skip_deform, image_path, nostaff_path, meth
 
 def detect_testset_staffs():
     input_files = get_filepaths()
-    output_path = Path(__file__).parents[2] / 'OMR-measure-segmenter-data/stafffinder-testset/testset_staffs_no-deform'
+    output_path = stafffinder_testset_dir / 'testset_staffs_no-deform'
     arg_tuples = []
     for input_file in tqdm(input_files):
         nostaff_input_file = input_file.parent / (input_file.stem + '-nostaff.png')
@@ -180,7 +181,7 @@ verification_group = [
 
 
 def verify():
-    testset_staffs_dir = Path(__file__).parents[2] / 'OMR-measure-segmenter-data/stafffinder-testset/testset_staffs'
+    testset_staffs_dir = stafffinder_testset_dir / 'testset_staffs'
     files = list(map(parse_filename, testset_staffs_dir.glob('*.json')))
     with open(testset_staffs_dir.parent / 'staff_annotations.txt') as file:
         staff_annotations_raw = file.readlines()

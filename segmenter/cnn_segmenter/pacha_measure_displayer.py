@@ -1,18 +1,18 @@
 import xml.etree.ElementTree as ET
-from pathlib import Path
-from posixpath import join
 from PIL import Image, ImageDraw
+
+from util.dirs import data_dir
 
 
 def display_measures(pages):
-    path = join(Path(__file__).parent.absolute(), 'data/measure_annotations-Mahler1-part3.xml')
+    path = data_dir / 'measure_annotations-Mahler1-part3.xml'
     root = ET.parse(path).getroot()
     facsimile = root[1][0]
 
     for idx in pages:
         page = facsimile[idx]
         page_iter = iter(page)
-        image_path = join(Path(__file__).parent.absolute(), 'data/ppm-600', next(page_iter).attrib['target'])
+        image_path = data_dir / 'Mahler_Symphony_1/ppm-300' / next(page_iter).attrib['target']
         img = Image.open(image_path)
         scalex = int(page.attrib['lrx']) / img.size[0]
         scaley = int(page.attrib['lry']) / img.size[1]

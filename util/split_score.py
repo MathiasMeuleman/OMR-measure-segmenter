@@ -1,7 +1,7 @@
 from PIL import Image
 from pathlib import Path
-from segmenter.dirs import data_dir
-from util.PIL_util import resize_img
+
+from util.dirs import data_dir
 
 
 def split_img_vertical(img_path):
@@ -28,6 +28,6 @@ def split_pages(folder, out_path):
 
 if __name__ == '__main__':
     score = 'Van_Bree_Allegro'
-    folder = Path(data_dir, score, 'ppm-300-pre')
-    out_path = Path(data_dir, score, 'ppm-300')
+    folder = data_dir / score / 'ppm-300-pre'
+    out_path = data_dir / score / 'ppm-300'
     split_pages(folder, out_path)

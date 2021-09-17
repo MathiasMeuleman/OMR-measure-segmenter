@@ -1,9 +1,8 @@
-from segmenter.dirs import eval_dir
+import json
+
 from segmenter.measure_detector import Page, Staff, SystemMeasure, System, Measure
 from segmenter.scripts.evaluation.evaluate import compare_results
-from pathlib import Path
-
-import json
+from util.dirs import eval_dir
 
 
 def build_fake_system(system_str):
@@ -30,12 +29,12 @@ def evaluate_dataset():
     scores = ['test']
     for score in scores:
 
-        with open(Path(eval_dir, 'truth', '{}_annotations.txt'.format(score)).resolve()) as file:
+        with open(eval_dir / 'truth' / '{}_annotations.txt'.format(score)) as file:
             baseline = [[build_fake_system(system_str) for system_str in line.rstrip().split(' ')] for line in file]
         true_pages = [Page(height=0, width=0, rotation=0, name='transcript_{}.png'.format(i+1), systems=s) for i, s in enumerate(baseline)]
 
         result_pages = []
-        for page_file in sorted(Path(eval_dir, version, 'annotations', score).glob('*.json')):
+        for page_file in sorted((eval_dir / version / 'annotations' / score).glob('*.json')):
             with open(page_file) as file:
                 page_data = json.loads(file.read())
                 systems = [build_system(system_data) for system_data in page_data['systems']]

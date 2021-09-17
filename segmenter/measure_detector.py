@@ -66,7 +66,7 @@ def modified_zscore(data):
 class MeasureDetector:
 
     def __init__(self, path):
-        self.path = path
+        self.path = Path(path)
         self.page = None
         self.original = self.rotated = self.bw = None
         self.v_lines = self.v_lines_subtr = None
@@ -377,7 +377,7 @@ class MeasureDetector:
             system = self.find_system_staffs(system, method=sys_method, plot=plot)
             system = self.find_measures(system)
             processed_systems.append(system)
-        name = Path(self.path).stem
+        name = self.path.stem
         page = Page(name=name, height=height, width=width, rotation=self.rotation, systems=processed_systems)
         self.page = page
         return self

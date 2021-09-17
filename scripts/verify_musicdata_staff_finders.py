@@ -1,8 +1,7 @@
 import json
 import string
-from pathlib import Path
 
-musicdata_dir = Path(__file__).parents[2] / 'OMR-measure-segmenter-data/musicdata'
+from util.dirs import musicdata_dir
 
 composer_name_map = {
     'bach': 'Bach, J.S.',

@@ -1,7 +1,6 @@
 from collections import namedtuple
-from pathlib import Path
 
-from segmenter.dirs import eval_dir
+from util.dirs import eval_dir
 
 TrueSystem = namedtuple('TrueSystem', ['staffs', 'measures'])
 TruePage = namedtuple('TruePage', ['systems'])
@@ -36,7 +35,7 @@ def compare_results(result_pages, true_pages, score_name, version):
     output += '\n' + 'System measure detection score:\t' + str(round(correct_system_measures / total_system_measures, 4) * 100) + '%'
     output += '\n' + '\n'.join(outputs) + '\n'
     print(output)
-    output_dir = Path(eval_dir, version, 'results')
+    output_dir = eval_dir / version / 'results'
     output_dir.mkdir(parents=True, exist_ok=True)
     with open(output_dir / '{}_evaluation_results.txt'.format(score_name), 'w') as file:
         file.write(output)
@@ -48,11 +47,11 @@ def build_true_system(system_str):
 
 
 def evaluate(score_name, version):
-    with open(Path(eval_dir, 'truth', '{}_annotations.txt'.format(score_name))) as file:
+    with open(eval_dir / 'truth' / '{}_annotations.txt'.format(score_name)) as file:
         baseline = [list(map(build_true_system, line.rstrip().split(' '))) for line in file]
     true_pages = list(map(lambda s: TruePage(systems=s), baseline))
 
-    with open(Path(eval_dir, version, 'annotations', '{}_annotation_results.txt'.format(score_name))) as file:
+    with open(eval_dir / version / 'annotations' / '{}_annotation_results.txt'.format(score_name)) as file:
         results = [list(map(build_true_system, line.rstrip().split(' '))) for line in file]
     result_pages = list(map(lambda s: TruePage(systems=s), results))
 
