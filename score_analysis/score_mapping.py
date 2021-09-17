@@ -50,7 +50,7 @@ class ScoreMapper:
         Parse groupings file. Assumes the annotations are already loaded. Groupings are separated per line and are:
         - A comma separated lists of ids of parts that need to be grouped together, optionally followed by a colon (:)
             indicating page specifications. If page specifications are not provided, the groupings hold for the entire
-            score.
+            score. If ids of parts contain commas (,), the semicolon (;) can be used instead as separator.
         - Page specifications are page numbers or ranges of page numbers, separated by commas. Page ranges are given as
             "[start]-[end]" with both start and end inclusive. A page number or range of page numbers can be negated
             prepending an exclamation mark (!), indicating the grouping does not hold for the given page or range. Note
@@ -69,7 +69,9 @@ class ScoreMapper:
                 lines = [line.rstrip() for line in file]
             groupings = [[[] for _ in page] for page in self.annotations]
             for i, line in enumerate(lines):
-                grouping = line.split(':')[0].split(',')
+                grouping_str = line.split(':')[0]
+                separator = ';' if ';' in grouping_str else ','
+                grouping = grouping_str.split(separator)
                 if ':' in line:
                     page_specifications = line.split(':')[1].split(',')
                     active_specs = [page for spec in page_specifications if not spec.startswith('!') for page in self.parse_page_specification(spec)]
@@ -306,6 +308,13 @@ def count_measures(path):
 if __name__ == '__main__':
     part_directories = [
         'bach_brandenburg_concerto_5_part_1',
+        'brahms_symphony_3',
+        'bruckner_symphony_5',
+        'bruckner_symphony_9',
+        'holst_the_planets',
+        'mozart_symphony_41',
+        'tchaikovsky_ouverture_1812/edition_1',
+        'temp'
         'beethoven_symphony_1/part_1',
         'beethoven_symphony_1/part_2',
         'beethoven_symphony_1/part_3',
@@ -320,15 +329,32 @@ if __name__ == '__main__':
         'beethoven_symphony_3/part_4',
         'beethoven_symphony_4/part_1',
         'beethoven_symphony_4/part_2',
-        'holst_the_planets',
+        'beethoven_symphony_5/part_1',
+        'beethoven_symphony_5/part_2',
+        'beethoven_symphony_5/part_3',
+        'beethoven_symphony_5/part_4',
+        'beethoven_symphony_6/part_1',
+        'beethoven_symphony_6/part_2',
+        'beethoven_symphony_6/part_3',
+        'beethoven_symphony_6/part_4',
+        'beethoven_symphony_6/part_5',
+        'beethoven_symphony_7/part_1',
+        'beethoven_symphony_7/part_2',
+        'beethoven_symphony_7/part_3',
+        'beethoven_symphony_7/part_4',
+        'beethoven_symphony_8/part_1',
+        'beethoven_symphony_8/part_2',
+        'beethoven_symphony_8/part_3',
+        'beethoven_symphony_8/part_4',
+        'beethoven_symphony_9/part_1',
+        'beethoven_symphony_9/part_2',
+        'beethoven_symphony_9/part_3',
+        'beethoven_symphony_9/part_4',
         'mahler_symphony_4',
-        'mozart_symphony_41',
-        'tchaikovsky_ouverture_1812/edition_1',
-        'temp'
     ]
 
     musicdata_directory = Path(root_dir).parent / 'OMR-measure-segmenter-data/musicdata'
-    path = musicdata_directory / part_directories[-3]
+    path = musicdata_directory / part_directories[-1]
     match_score(path)
     # match_page(path, 41)
     # count_measures(path)
