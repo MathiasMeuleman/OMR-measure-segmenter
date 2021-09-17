@@ -6,12 +6,12 @@ from tqdm import tqdm
 
 class StaffVerifyer:
 
-    def __init__(self, directory):
+    def __init__(self, directory, staffs_path=None, overlay_path=None):
         self.directory = directory
         self.mapping_path = Path(directory) / 'score_mapping.json'
-        self.staffs_path = Path(directory) / 'staffs'
+        self.staffs_path = Path(directory) / 'staffs' if staffs_path is None else staffs_path
         self.pages_path = Path(directory) / 'pages'
-        self.overlay_path = Path(directory) / 'staff_overlays'
+        self.overlay_path = Path(directory) / 'staff_overlays' if overlay_path is None else overlay_path
 
     def overlay_page_staffs(self, pagenumber):
         page_name = 'page_{}'.format(pagenumber)
@@ -31,6 +31,29 @@ class StaffVerifyer:
         img = img.resize((int(img.size[0] * scale), int(img.size[1] * scale)), Image.ANTIALIAS)
         img.save(self.overlay_path / 'pages' / '{}.png'.format(page_name))
         return img
+
+    def generate_staff_overlays_pdf(self):
+        overlay_pages_path = self.overlay_path / 'pages'
+        images = []
+        for i in range(len(list(self.staffs_path.iterdir()))):
+            image = Image.open(overlay_pages_path / ('page_' + str(i + 1) + '.png'))
+            images.append(image)
+        images[0].save(self.overlay_path / 'staff_overlays.pdf', 'PDF', resolution=100.0, save_all=True, append_images=images[1:])
+
+    def combine_part_staff_overlay_pdfs(self):
+        parts = sorted([d for d in self.directory.iterdir() if d.is_dir() and d.name.startswith('part_')])
+        if len(parts) == 0:
+            return
+        for staff_finder in ['Dalitz', 'Meuleman']:
+            overlay_dir = self.directory / 'staff_overlays' / staff_finder
+            overlay_dir.mkdir(parents=True, exist_ok=True)
+            images = []
+            for part in parts:
+                part_overlay_pages = part / 'staff_overlays' / staff_finder / 'pages'
+                for i in range(len(list(part_overlay_pages.iterdir()))):
+                    image = Image.open(part_overlay_pages / ('page_' + str(i + 1) + '.png'))
+                    images.append(image)
+            images[0].save(overlay_dir / 'staff_overlays.pdf', 'PDF', resolution=100.0, save_all=True, append_images=images[1:])
 
     def overlay_staffs(self):
         overlay_pages_path = self.overlay_path / 'pages'
@@ -62,5 +85,5 @@ class StaffVerifyer:
 
 if __name__ == '__main__':
     data_dir = Path(__file__).absolute().parent.parent.parent / 'OMR-measure-segmenter-data/musicdata'
-    score_dir = data_dir / 'bach_brandenburg_concerto_5_part_1'
-    StaffVerifyer(score_dir).overlay_page_staffs(16)
+    score_dir = data_dir / 'brahms_symphony_3'
+    StaffVerifyer(score_dir).generate_staff_overlays_pdf()
