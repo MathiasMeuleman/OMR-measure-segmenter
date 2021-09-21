@@ -19,11 +19,11 @@ class StaffDetector:
         return score_path
 
     def verify_pages_exist(self):
-        score_path = self.get_score_path()
         pages_path = self.directory / 'pages'
         if not pages_path.is_dir():
             pages_path.mkdir()
         if not (pages_path / 'page_1.png').is_file():
+            score_path = self.get_score_path()
             convert_pdf_file(score_path, pages_path)
 
     def run_py2_detect_staffs(self, image_path, output_path):
