@@ -1,75 +1,31 @@
 import numpy as np
-from collections import Counter
 from queue import SimpleQueue
 from PIL import Image
 from skimage.filters import threshold_otsu
 
+from score_analysis.staff_measurements import get_staff_measurements
 from util.dirs import data_dir
 
 
-def rle(inarray):
-    """ run length encoding. Partial credit to R rle function.
-        Multi datatype arrays catered for including non Numpy
-        returns: tuple (runlengths, startpositions, values) """
-    ia = np.asarray(inarray)  # force numpy
-    n = len(ia)
-    if n == 0:
-        return None, None, None
-    else:
-        y = ia[1:] != ia[:-1]  # pairwise unequal (string safe)
-        i = np.append(np.where(y), n - 1)  # must include last element position
-        z = np.diff(np.append(-1, i))  # run lengths
-        return z
+class SkeletonExtractor:
 
-
-class BlackRunsExtractor:
-
-    def __init__(self, image_path, direction):
-        self.image_path = image_path
+    def __init__(self, image, direction, staffline_height, staffspace_height, invert=False):
         if direction not in ['vertical', 'horizontal']:
             raise ValueError('Value of parameter "orientation" should be either "vertical" or "horizontal"')
         self.direction = direction
-        self.image = None
-        self.np_image = None
-        self.black_value = None
-        self.white_value = None
-        self.staffline_height = None
-        self.staffspace_height = None
+        self.image = image
+        if invert:
+            # Threshold and invert in one operation
+            threshold = threshold_otsu(np.asarray(self.image))
+            self.image = self.image.point(lambda p: p <= threshold and 255)
+        self.np_image = np.asarray(self.image)
+        self.black_value = self.np_image.max()
+        self.white_value = 0
+        self.staffline_height = staffline_height
+        self.staffspace_height = staffspace_height
         self.black_runs = None
         self.skeleton_list = None
         self.skeleton_image = None
-
-    def load_image(self):
-        img = Image.open(self.image_path).convert('L')
-        threshold = threshold_otsu(np.asarray(img))
-
-        # Threshold and invert in one operation
-        self.image = img.point(lambda p: p <= threshold and 255)
-        self.np_image = np.asarray(self.image)
-        self.white_value = 0
-        self.black_value = np.asarray(self.image).max()
-        self.find_staffspace_properties()
-
-    def find_staffspace_properties(self):
-        """
-        Compute the staffspace_heigth and staffline_height properties by finding
-        the most common white run and black run in the run length encoding.
-        """
-        rows, cols = self.np_image.shape
-        black_runs = []
-        white_runs = []
-        for i in range(cols):
-            col = self.np_image[:, i]
-            runlengths = rle(col)
-            starts_black = col[0] == self.black_value
-            if starts_black:
-                black_runs.extend(runlengths[0:len(runlengths):2])
-                white_runs.extend(runlengths[1:len(runlengths):2])
-            else:
-                black_runs.extend(runlengths[1:len(runlengths):2])
-                white_runs.extend(runlengths[0:len(runlengths):2])
-        self.staffline_height = max(black_runs, key=Counter(black_runs).get)
-        self.staffspace_height = max(white_runs, key=Counter(white_runs).get)
 
     def extract_black_runs(self, window=3, blackness=60):
         """
@@ -80,7 +36,7 @@ class BlackRunsExtractor:
         :param blackness: The blackness threshold in percentage (0-100).
         """
         threshold = blackness / 100.
-        np_image = self.np_image if self.direction == 'vertical' else self.np_image.T
+        np_image = self.np_image if self.direction == 'horizontal' else self.np_image.T
         dest_img = np.full(np_image.shape, self.white_value, dtype=np.uint8)
         window_size = round(self.staffspace_height * window)
         half_window = window_size // 2
@@ -172,12 +128,8 @@ class BlackRunsExtractor:
         Label all pixels in the image between top and bottom,
         limited to 2 * staffline_height, with label `label`.
         """
-        decision_plus = middle + 2 * self.staffline_height
-
-        if middle < 2 * self.staffline_height:
-            decision_minus = 0
-        else:
-            decision_minus = middle - 2 * self.staffline_height
+        decision_plus = min(image.shape[0] - 1, middle + 2 * self.staffline_height)
+        decision_minus = max(0, middle - 2 * self.staffline_height)
 
         b = min(bottom, decision_plus)
         t = max(top, decision_minus)
@@ -280,10 +232,10 @@ class BlackRunsExtractor:
         staffheight_tolerance = 0.75 * self.staffline_height
 
         if middle_prev == 0:
-            middle = BlackRunsExtractor.compute_middle(top, bottom)
+            middle = SkeletonExtractor.compute_middle(top, bottom)
         elif top <= middle_prev <= bottom:
             if bottom - top < 2 * staffheight_tolerance:
-                middle = BlackRunsExtractor.compute_middle(top, bottom)
+                middle = SkeletonExtractor.compute_middle(top, bottom)
             elif bottom <= middle_prev + staffheight_tolerance:
                 middle = max(0, bottom - staffheight_tolerance)
             else:
@@ -299,21 +251,21 @@ class BlackRunsExtractor:
                 if bottom - top >= 2 * staffheight_tolerance:
                     middle = top + staffheight_tolerance
                 else:
-                    middle = BlackRunsExtractor.compute_middle(top, bottom)
+                    middle = SkeletonExtractor.compute_middle(top, bottom)
             elif middle_prev > bottom:
                 if bottom - top >= 2 * staffheight_tolerance:
                     middle = bottom - staffheight_tolerance
                 else:
-                    middle = BlackRunsExtractor.compute_middle(top, bottom)
+                    middle = SkeletonExtractor.compute_middle(top, bottom)
             else:
-                middle = BlackRunsExtractor.compute_middle(top, bottom)
+                middle = SkeletonExtractor.compute_middle(top, bottom)
         return int(middle), guessed, wall
 
     def vertical_thinning(self, image):
         skeleton_list = []
         label = 1
-        for row in range(image.shape[0]):
-            for col in range(image.shape[1]):
+        for col in range(image.shape[1]):
+            for row in range(image.shape[0]):
                 # This pixel has been scanned before, or is white
                 if image[row, col] != self.black_value:
                     continue
@@ -370,6 +322,7 @@ class BlackRunsExtractor:
                         break
 
                 skeleton_list.append(line)
+        skeleton_list.sort(key=lambda s: (s[1][0], s[0]))
         self.skeleton_list = skeleton_list
 
     def get_skeleton_list(self, window=3, blackness=60):
@@ -378,22 +331,27 @@ class BlackRunsExtractor:
             self.vertical_thinning(self.black_runs)
         return self.skeleton_list
 
-    def skeleton_list_to_image(self):
-        image = np.full(self.np_image.shape, self.white_value, dtype=np.uint8)
-        if self.direction == 'vertical':
-            for (x, y_values) in self.skeleton_list:
+    def get_skeleton_image(self, original, skeleton_list):
+        original_img = np.array(original)
+        image = np.full(original_img.shape, self.white_value, dtype=np.uint8)
+        if self.direction == 'horizontal':
+            for (x, y_values) in skeleton_list:
                 for col in range(len(y_values)):
                     image[y_values[col], x + col] = self.black_value
         else:
-            for (y, x_values) in self.skeleton_list:
+            for (y, x_values) in skeleton_list:
                 for row in range(len(x_values)):
                     image[y + row, x_values[row]] = self.black_value
-        self.skeleton_image = image
+        return Image.fromarray(image)
+
+    def skeleton_list_to_image(self):
+        self.skeleton_image = self.get_skeleton_image(self.np_image, self.skeleton_list)
 
 
 if __name__ == '__main__':
-    sample_dir = data_dir / 'sample'
+    sample_dir = data_dir / 'sample' / 'pages'
     image_path = sample_dir / 'page_1.png'
-    tracker = BlackRunsExtractor(image_path, direction='vertical')
-    tracker.load_image()
+    image = Image.open(image_path).convert('L')
+    staffline_height, staffspace_height = get_staff_measurements(image)
+    tracker = SkeletonExtractor(image, 'horizontal', staffline_height, staffspace_height)
     skeleton_list = tracker.get_skeleton_list()

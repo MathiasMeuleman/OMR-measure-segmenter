@@ -3,14 +3,13 @@ from PIL import Image, ImageColor, ImageDraw
 from pathlib import Path
 from tqdm import tqdm
 
-from util.dirs import musicdata_dir
-
 
 class StaffVerifyer:
 
-    def __init__(self, directory, staffs_path=None, overlay_path=None):
+    def __init__(self, directory, staffs, staffs_path=None, overlay_path=None):
         path_directory = Path(directory)
         self.directory = path_directory
+        self.staffs = staffs
         self.mapping_path = path_directory / 'score_mapping.json'
         self.staffs_path = path_directory / 'staffs' if staffs_path is None else staffs_path
         self.pages_path = path_directory / 'pages'
@@ -18,8 +17,7 @@ class StaffVerifyer:
 
     def overlay_page_staffs(self, pagenumber):
         page_name = 'page_{}'.format(pagenumber)
-        with open(self.staffs_path / '{}.json'.format(page_name)) as file:
-            staves = json.load(file)
+        staves = self.staffs[pagenumber - 1]
         img = Image.open(self.pages_path / '{}.png'.format(page_name))
 
         max_height = 950
@@ -65,7 +63,7 @@ class StaffVerifyer:
         if not self.staffs_path.is_dir():
             raise AssertionError('Could not find staffs directory')
         images = []
-        for i in tqdm(range(len(list(self.staffs_path.iterdir())))):
+        for i in tqdm(range(len(list(self.pages_path.iterdir())))):
             image = self.overlay_page_staffs(i + 1)
             images.append(image)
         images[0].save(self.overlay_path / 'staff_overlays.pdf', 'PDF', resolution=100.0, save_all=True, append_images=images[1:])
@@ -74,8 +72,7 @@ class StaffVerifyer:
         with open(self.mapping_path) as file:
             mapping = json.load(file)
         for i, page in enumerate(mapping['pages']):
-            with open(self.staffs_path / 'page_{}.json'.format(i + 1)) as file:
-                page_staffs = json.load(file)
+            page_staffs = self.staffs[i]
             true_staff_count = sum([1 for system in page['systems'] for staff in system['staffs']])
             found_staff_count = sum([1 for staff in page_staffs['staves']])
             deviation = '\t!!' if true_staff_count != found_staff_count else ''
@@ -84,8 +81,3 @@ class StaffVerifyer:
             unexpected_stafflines = [i for i in range(len(found_staffline_count)) if found_staffline_count[i] not in [1, 5]]
             if len(unexpected_stafflines) > 0:
                 print('\tFound staffline count: {}'.format(['{}: {}'.format(i, found_staffline_count[i]) for i in unexpected_stafflines]))
-
-
-if __name__ == '__main__':
-    score_dir = musicdata_dir / 'brahms_symphony_3'
-    StaffVerifyer(score_dir).generate_staff_overlays_pdf()

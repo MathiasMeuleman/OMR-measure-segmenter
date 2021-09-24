@@ -9,8 +9,8 @@ if __name__ == '__main__':
     part_dirs = [part for parts in part_dirs for part in parts]
     for score_dir in part_dirs:
         for staff_finder in ['Meuleman']:
-            StaffDetector(score_dir, staff_finder).detect_staffs()
+            staffs = StaffDetector(score_dir, staff_finder).detect_staffs()
             staffs_path = score_dir / 'staffs' / staff_finder
             overlay_path = score_dir / 'staff_overlays' / staff_finder
-            verifyer = StaffVerifyer(score_dir, staffs_path=staffs_path, overlay_path=overlay_path)
+            verifyer = StaffVerifyer(score_dir, staffs, staffs_path=staffs_path, overlay_path=overlay_path)
             verifyer.generate_staff_overlays_pdf()
