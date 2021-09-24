@@ -1,28 +1,24 @@
 import numpy as np
 from queue import SimpleQueue
 from PIL import Image
-from skimage.filters import threshold_otsu
 
-from score_analysis.staff_measurements import get_staff_measurements
+from score_analysis.score_image import ScoreImage
 from util.dirs import data_dir
 
 
 class SkeletonExtractor:
 
-    def __init__(self, image, direction, staffline_height, staffspace_height, invert=False):
+    def __init__(self, image, direction):
         if direction not in ['vertical', 'horizontal']:
             raise ValueError('Value of parameter "orientation" should be either "vertical" or "horizontal"')
         self.direction = direction
-        self.image = image
-        if invert:
-            # Threshold and invert in one operation
-            threshold = threshold_otsu(np.asarray(self.image))
-            self.image = self.image.point(lambda p: p <= threshold and 255)
+        self.score_image = image if isinstance(image, ScoreImage) else ScoreImage(image)
+        self.image = self.score_image.wb_image
         self.np_image = np.asarray(self.image)
         self.black_value = self.np_image.max()
         self.white_value = 0
-        self.staffline_height = staffline_height
-        self.staffspace_height = staffspace_height
+        self.staffline_height = self.score_image.staffline_height
+        self.staffspace_height = self.score_image.staffspace_height
         self.black_runs = None
         self.skeleton_list = None
         self.skeleton_image = None
@@ -352,6 +348,5 @@ if __name__ == '__main__':
     sample_dir = data_dir / 'sample' / 'pages'
     image_path = sample_dir / 'page_1.png'
     image = Image.open(image_path).convert('L')
-    staffline_height, staffspace_height = get_staff_measurements(image)
-    tracker = SkeletonExtractor(image, 'horizontal', staffline_height, staffspace_height)
+    tracker = SkeletonExtractor(image, 'horizontal')
     skeleton_list = tracker.get_skeleton_list()

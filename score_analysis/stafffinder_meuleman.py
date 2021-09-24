@@ -24,10 +24,9 @@
 
 import numpy as np
 from PIL import Image, ImageDraw, ImageOps
-from skimage.filters import threshold_otsu
 
+from score_analysis.score_image import ScoreImage
 from score_analysis.skeleton_extractor import SkeletonExtractor
-from score_analysis.staff_measurements import get_staff_measurements
 
 
 class StaffFinder_meuleman():
@@ -112,20 +111,13 @@ class StaffFinder_meuleman():
 
     # ------------------------------------------------------------
 
-    def __init__(self, img, staffline_height=0, staffspace_height=0):
-        self.image = img.copy().convert('L')
-        # Thresholded inverted image
-        threshold = threshold_otsu(np.asarray(self.image))
-        self.wb_image = self.image.point(lambda p: p <= threshold and 255)
+    def __init__(self, image):
+        self.score_image = image if isinstance(image, ScoreImage) else ScoreImage(image)
+        self.image = self.score_image.image
+        self.wb_image = self.score_image.wb_image
 
-        if staffline_height == 0 or staffspace_height == 0:
-            measurements = get_staff_measurements(self.wb_image)
-            if staffline_height == 0:
-                staffline_height = measurements[0]
-            if staffspace_height == 0:
-                staffspace_height = measurements[1]
-        self.staffline_height = staffline_height
-        self.staffspace_height = staffspace_height
+        self.staffline_height = self.score_image.staffline_height
+        self.staffspace_height = self.score_image.staffspace_height
         self.linelist = []
 
     def find_staves(self, window=3, blackness=60, tolerance=25, align_edges=True, join_interrupted=True, debug=0):
@@ -173,7 +165,7 @@ class StaffFinder_meuleman():
             print('\nGetting staff skeletons...')
 
         # Get the skeleton list
-        extractor = SkeletonExtractor(self.wb_image, 'horizontal', self.staffline_height, self.staffspace_height)
+        extractor = SkeletonExtractor(self.score_image, 'horizontal')
         skeleton_list = extractor.get_skeleton_list(window=window, blackness=blackness)
 
         too_short_skeletons = [line for line in skeleton_list if len(line[1]) < self.staffspace_height * 2]
