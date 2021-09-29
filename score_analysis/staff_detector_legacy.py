@@ -5,6 +5,7 @@ from pathlib import Path
 from PIL import Image, ImageColor, ImageDraw
 from tqdm import tqdm
 
+from score_analysis.staff_detector import Staff
 from util.dirs import data_dir
 
 
@@ -23,7 +24,8 @@ class StaffDetectorLegacy:
         output_path = self.image_path.parents[0] / '.tmp-{}.json'.format(self.image_path.stem) if self.output_path is None else self.output_path
         self.run_py2_detect_staffs(self.image_path, output_path)
         with open(output_path) as f:
-            staffs = json.load(f)
+            staff_collection = json.load(f)
+            staffs = [Staff.from_json(staff) for staff in staff_collection['staffs']]
         return staffs
 
 
@@ -38,10 +40,10 @@ if __name__ == '__main__':
                                      output_path=staff_path / (image_path.stem + '.json')).detect_staffs()
         staff_image = image.convert('RGB')
         colors = ['red', 'orange', 'green', 'blue', 'purple']
-        for i, staff in enumerate(staffs['staves']):
+        for i, staff in enumerate(staffs):
             color = ImageColor.getrgb(colors[i % len(colors)])
-            for line in staff['lines']:
+            for line in staff.stafflines:
                 draw = ImageDraw.Draw(staff_image, mode='RGBA')
-                draw.line([tuple(point) for point in line], fill=color, width=5)
+                draw.line(((line.start, line.y), (line.end, line.y)), fill=color, width=5)
                 del draw
         staff_image.save(overlay_path / image_path.name)

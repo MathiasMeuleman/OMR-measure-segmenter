@@ -17,14 +17,77 @@ class StaffDetector:
     def detect_staffs(self):
         staff_finder = StaffFinder_meuleman(self.image)
         staff_finder.find_staves(debug=0)
-        staves = staff_finder.get_average()
-        staffs = {'staves': [
-            {'lines': [[[line.left_x, line.average_y], [line.right_x, line.average_y]] for line in staff]}
-            for staff in staves]}
+        staff_finder_average = staff_finder.get_average()
+        staffs = []
+        for staff in staff_finder_average:
+            staff_obj = Staff()
+            for line in staff:
+                staffline = StaffLine(line.left_x, line.right_x, line.average_y)
+                staff_obj.add_staffline(staffline)
+            staffs.append(staff_obj)
         if self.output_path is not None:
             with open(self.output_path, 'w') as f:
-                f.write(json.dumps(staffs, sort_keys=True, indent=2))
+                f.write(json.dumps({'staffs': [staff.to_json() for staff in staffs]}, sort_keys=True, indent=2))
         return staffs
+
+
+class StaffLine:
+    """
+    Data class that represents a staffline.
+    """
+    def __init__(self, start, end, y):
+        self.start = start
+        self.end = end
+        self.y = y
+
+    @staticmethod
+    def from_json(json_data):
+        staffline = StaffLine(json_data['start'], json_data['end'], json_data['y'])
+        return staffline
+
+    def to_json(self):
+        return {'start': self.start, 'end': self.end, 'y': self.y}
+
+
+class Staff:
+
+    def __init__(self):
+        self.stafflines = []
+        self.start = 0
+        self.end = 0
+        self.top = 0
+        self.bottom = 0
+
+    def add_staffline(self, staffline):
+        first = len(self.stafflines) == 0
+        self.stafflines.append(staffline)
+        if first or staffline.start < self.start:
+            self.start = staffline.start
+        if first or staffline.end > self.end:
+            self.end = staffline.end
+        if first or staffline.y < self.top:
+            self.top = staffline.y
+        if first or staffline.y > self.bottom:
+            self.bottom = staffline.y
+
+    @staticmethod
+    def from_json(json_data):
+        staff = Staff()
+        staff.top = json_data['top']
+        staff.bottom = json_data['bottom']
+        staff.start = json_data['start']
+        staff.end = json_data['end']
+        staff.stafflines = [StaffLine.from_json(staffline) for staffline in json_data['stafflines']]
+        return staff
+
+    def to_json(self):
+        return {
+            'stafflines': [staffline.to_json() for staffline in self.stafflines],
+            'top': self.top,
+            'bottom': self.bottom,
+            'start': self.start,
+            'end': self.end,
+        }
 
 
 if __name__ == '__main__':
@@ -37,10 +100,10 @@ if __name__ == '__main__':
         staffs = StaffDetector(image, output_path=staff_path / (image_path.stem + '.json')).detect_staffs()
         staff_image = image.convert('RGB')
         colors = ['red', 'orange', 'green', 'blue', 'purple']
-        for i, staff in enumerate(staffs['staves']):
+        for i, staff in enumerate(staffs):
             color = ImageColor.getrgb(colors[i % len(colors)])
-            for line in staff['lines']:
+            for line in staff.stafflines:
                 draw = ImageDraw.Draw(staff_image, mode='RGBA')
-                draw.line([tuple(point) for point in line], fill=color, width=5)
+                draw.line(((line.start, line.y), (line.end, line.y)), fill=color, width=5)
                 del draw
         staff_image.save(overlay_path / image_path.name)

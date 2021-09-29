@@ -18,10 +18,61 @@ def detect_staffs(image_path, output_path, staff_finder_name='Meuleman'):
     numlines = 5 if staff_finder_name == 'Dalitz' else 0
     staff_finder.find_staves(num_lines=numlines, debug=0)
 
-    staves = staff_finder.get_average()
-    staff_points = [{'lines': [[[line.left_x, line.average_y], [line.right_x, line.average_y]] for line in staff]} for staff in staves]
+    staff_finder_average = staff_finder.get_average()
+    staffs = []
+    for staff in staff_finder_average:
+        staff_obj = Staff()
+        for line in staff:
+            staffline = StaffLine(line.left_x, line.right_x, line.average_y)
+            staff_obj.add_staffline(staffline)
+        staffs.append(staff_obj)
+    staff_collection = {'staffs': [staff.to_json() for staff in staffs]}
     with open(output_path, 'w') as file:
-        file.write(json.dumps({'staves': staff_points}, indent=2, sort_keys=True))
+        json.dump(staff_collection, file, indent=2, sort_keys=True)
+
+
+class StaffLine:
+    """
+    Data class that represents a staffline.
+    """
+    def __init__(self, start, end, y):
+        self.start = start
+        self.end = end
+        self.y = y
+
+    def to_json(self):
+        return {'start': self.start, 'end': self.end, 'y': self.y}
+
+
+class Staff:
+
+    def __init__(self):
+        self.stafflines = []
+        self.start = 0
+        self.end = 0
+        self.top = 0
+        self.bottom = 0
+
+    def add_staffline(self, staffline):
+        first = len(self.stafflines) == 0
+        self.stafflines.append(staffline)
+        if first or staffline.start < self.start:
+            self.start = staffline.start
+        if first or staffline.end > self.end:
+            self.end = staffline.end
+        if first or staffline.y < self.top:
+            self.top = staffline.y
+        if first or staffline.y > self.bottom:
+            self.bottom = staffline.y
+
+    def to_json(self):
+        return {
+            'stafflines': [staffline.to_json() for staffline in self.stafflines],
+            'top': self.top,
+            'bottom': self.bottom,
+            'start': self.start,
+            'end': self.end,
+        }
 
 
 if __name__ == '__main__':

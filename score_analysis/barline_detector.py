@@ -226,11 +226,10 @@ class BarlineDetector:
                             barline_img[segment.y + row, segment.x_values[row]-2:segment.x_values[row]+2] = color
             Image.fromarray(barline_img).save('barlines.png')
 
-        systems_obj = {'systems': [system.to_json() for system in systems]}
         if self.output_path is not None:
             with open(self.output_path, 'w') as f:
-                json.dump(systems_obj, f)
-        return systems_obj
+                json.dump({'systems': [system.to_json() for system in systems]}, f, sort_keys=True, indent=2)
+        return systems
 
 
 class BarlineSegment:
@@ -241,6 +240,11 @@ class BarlineSegment:
         self.y = y
         self.x_values = x_values
         self.label = 0
+
+    @staticmethod
+    def from_json(json_data):
+        segment = BarlineSegment(json_data['y'], json_data['x_values'])
+        return segment
 
     def to_json(self):
         return {'y': self.y, 'x_values': self.x_values}
@@ -317,8 +321,20 @@ class Barline:
             segment_idx += 1
         self.prediction = prediction
 
+    @staticmethod
+    def from_json(json_data):
+        barline = Barline()
+        barline.min_y = json_data['top']
+        barline.max_y = json_data['bottom']
+        barline.segments = [BarlineSegment.from_json(segment) for segment in json_data['segments']]
+        return barline
+
     def to_json(self):
-        return {'segments': [segment.to_json() for segment in self.segments]}
+        return {
+            'segments': [segment.to_json() for segment in self.segments],
+            'top': self.min_y,
+            'bottom': self.max_y,
+        }
 
 
 class System:
@@ -336,8 +352,20 @@ class System:
         if first or barline.max_y > self.max_y:
             self.max_y = barline.max_y
 
+    @staticmethod
+    def from_json(json_data):
+        system = System()
+        system.min_y = json_data['top']
+        system.max_y = json_data['bottom']
+        system.barlines = [Barline.from_json(barline) for barline in json_data['barlines']]
+        return system
+
     def to_json(self):
-        return {'barlines': [barline.to_json() for barline in self.barlines]}
+        return {
+            'barlines': [barline.to_json() for barline in self.barlines],
+            'top': self.min_y,
+            'bottom': self.max_y,
+        }
 
 
 if __name__ == '__main__':
@@ -350,11 +378,11 @@ if __name__ == '__main__':
         detector = BarlineDetector(image, output_path=barline_paths / (image_path.stem + '.json'))
         systems = detector.detect_barlines(debug=0)
         barline_img = np.array(image.convert('RGB'))
-        for system in systems['systems']:
+        for system in systems:
             colors = ['red', 'orange', 'green', 'blue', 'purple']
-            for i, barline in enumerate(system['barlines']):
+            for i, barline in enumerate(system.barlines):
                 color = ImageColor.getrgb(colors[i % len(colors)])
-                for segment in barline['segments']:
-                    for row in range(len(segment['x_values'])):
-                        barline_img[segment['y'] + row, segment['x_values'][row] - 2:segment['x_values'][row] + 2] = color
+                for segment in barline.segments:
+                    for row in range(len(segment.x_values)):
+                        barline_img[segment.y + row, segment.x_values[row] - 2:segment.x_values[row] + 2] = color
         Image.fromarray(barline_img).save(overlay_paths / image_path.name)
