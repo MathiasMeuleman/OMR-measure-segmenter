@@ -1,11 +1,12 @@
 import json
 
-from PIL import Image, ImageColor, ImageDraw
+from PIL import Image
 from tqdm import tqdm
 
 from score_analysis.score_image import ScoreImage
 from score_analysis.stafffinder_meuleman import StaffFinder_meuleman
 from util.dirs import data_dir
+from util.score_draw import ScoreDraw
 
 
 class StaffDetector:
@@ -98,12 +99,6 @@ if __name__ == '__main__':
     for image_path in tqdm((data_dir / 'sample' / 'pages').iterdir()):
         image = Image.open(image_path)
         staffs = StaffDetector(image, output_path=staff_path / (image_path.stem + '.json')).detect_staffs()
-        staff_image = image.convert('RGB')
-        colors = ['red', 'orange', 'green', 'blue', 'purple']
-        for i, staff in enumerate(staffs):
-            color = ImageColor.getrgb(colors[i % len(colors)])
-            for line in staff.stafflines:
-                draw = ImageDraw.Draw(staff_image, mode='RGBA')
-                draw.line(((line.start, line.y), (line.end, line.y)), fill=color, width=5)
-                del draw
+        score_draw = ScoreDraw(image)
+        staff_image = score_draw.draw_staffs(staffs)
         staff_image.save(overlay_path / image_path.name)

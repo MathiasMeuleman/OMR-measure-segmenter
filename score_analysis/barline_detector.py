@@ -1,14 +1,15 @@
 import json
+from pathlib import Path
+from statistics import median
 
 import numpy as np
-from pathlib import Path
-from PIL import Image, ImageOps, ImageColor
-from statistics import median
+from PIL import Image, ImageOps
 from tqdm import tqdm
 
 from score_analysis.score_image import ScoreImage
 from score_analysis.skeleton_extractor import SkeletonExtractor
 from util.dirs import data_dir
+from util.score_draw import ScoreDraw
 
 
 class BarlineDetector:
@@ -321,6 +322,12 @@ class Barline:
             segment_idx += 1
         self.prediction = prediction
 
+    def get_average(self):
+        coords = []
+        for segment in self.segments:
+            coords.extend(segment.x_values)
+        return int(sum(coords) / len(coords))
+
     @staticmethod
     def from_json(json_data):
         barline = Barline()
@@ -377,12 +384,6 @@ if __name__ == '__main__':
         image = Image.open(image_path)
         detector = BarlineDetector(image, output_path=barline_paths / (image_path.stem + '.json'))
         systems = detector.detect_barlines(debug=0)
-        barline_img = np.array(image.convert('RGB'))
-        for system in systems:
-            colors = ['red', 'orange', 'green', 'blue', 'purple']
-            for i, barline in enumerate(system.barlines):
-                color = ImageColor.getrgb(colors[i % len(colors)])
-                for segment in barline.segments:
-                    for row in range(len(segment.x_values)):
-                        barline_img[segment.y + row, segment.x_values[row] - 2:segment.x_values[row] + 2] = color
+        score_draw = ScoreDraw(image)
+        barline_img = score_draw.draw_systems(systems)
         Image.fromarray(barline_img).save(overlay_paths / image_path.name)
