@@ -1,5 +1,8 @@
+import json
+
 import numpy as np
-from PIL import Image, ImageOps
+from pathlib import Path
+from PIL import Image, ImageOps, ImageColor
 from statistics import median
 from tqdm import tqdm
 
@@ -10,11 +13,12 @@ from util.dirs import data_dir
 
 class BarlineDetector:
 
-    def __init__(self, image, len_threshold=0):
+    def __init__(self, image, len_threshold=0, output_path=None):
         self.score_image = image if isinstance(image, ScoreImage) else ScoreImage(image)
         self.image = self.score_image.image
         self.staffline_height = self.score_image.staffline_height
         self.staffspace_height = self.score_image.staffspace_height
+        self.output_path = Path(output_path) if output_path is not None else None
 
         if len_threshold == 0:
             # Default length threshold is set at the height of two staffs of 5 stafflines each.
@@ -221,7 +225,12 @@ class BarlineDetector:
                         for row in range(len(segment.x_values)):
                             barline_img[segment.y + row, segment.x_values[row]-2:segment.x_values[row]+2] = color
             Image.fromarray(barline_img).save('barlines.png')
-        return systems
+
+        systems_obj = {'systems': [system.to_json() for system in systems]}
+        if self.output_path is not None:
+            with open(self.output_path, 'w') as f:
+                json.dump(systems_obj, f)
+        return systems_obj
 
 
 class BarlineSegment:
@@ -232,6 +241,9 @@ class BarlineSegment:
         self.y = y
         self.x_values = x_values
         self.label = 0
+
+    def to_json(self):
+        return {'y': self.y, 'x_values': self.x_values}
 
 
 class Barline:
@@ -305,6 +317,9 @@ class Barline:
             segment_idx += 1
         self.prediction = prediction
 
+    def to_json(self):
+        return {'segments': [segment.to_json() for segment in self.segments]}
+
 
 class System:
 
@@ -321,19 +336,25 @@ class System:
         if first or barline.max_y > self.max_y:
             self.max_y = barline.max_y
 
+    def to_json(self):
+        return {'barlines': [barline.to_json() for barline in self.barlines]}
+
 
 if __name__ == '__main__':
+    barline_paths = data_dir / 'sample' / 'barlines'
+    barline_paths.mkdir(parents=True, exist_ok=True)
+    overlay_paths = data_dir / 'sample' / 'barline_overlays'
+    overlay_paths.mkdir(parents=True, exist_ok=True)
     for image_path in tqdm((data_dir / 'sample' / 'pages').iterdir()):
         image = Image.open(image_path)
-        detector = BarlineDetector(image)
+        detector = BarlineDetector(image, output_path=barline_paths / (image_path.stem + '.json'))
         systems = detector.detect_barlines(debug=0)
         barline_img = np.array(image.convert('RGB'))
-        for system in systems:
-            for barline in system.barlines:
-                color = (150 + (31 * barline.label) % 106,
-                         150 + (111 * (barline.label + 1)) % 106,
-                         150 + (201 * (barline.label + 2)) % 106)
-                for segment in barline.segments:
-                    for row in range(len(segment.x_values)):
-                        barline_img[segment.y + row, segment.x_values[row] - 2:segment.x_values[row] + 2] = color
-        Image.fromarray(barline_img).save(data_dir / 'sample' / 'barlines' / image_path.name)
+        for system in systems['systems']:
+            colors = ['red', 'orange', 'green', 'blue', 'purple']
+            for i, barline in enumerate(system['barlines']):
+                color = ImageColor.getrgb(colors[i % len(colors)])
+                for segment in barline['segments']:
+                    for row in range(len(segment['x_values'])):
+                        barline_img[segment['y'] + row, segment['x_values'][row] - 2:segment['x_values'][row] + 2] = color
+        Image.fromarray(barline_img).save(overlay_paths / image_path.name)
