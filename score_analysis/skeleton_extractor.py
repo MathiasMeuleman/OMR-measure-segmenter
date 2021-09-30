@@ -1,5 +1,6 @@
-import numpy as np
 from queue import SimpleQueue
+
+import numpy as np
 from PIL import Image
 
 from score_analysis.score_image import ScoreImage
@@ -202,13 +203,6 @@ class SkeletonExtractor:
         top = bottom = row
         neighbor = None
         nearest_distance = image.shape[0]
-        while bottom < image.shape[0] and image[bottom, col] == self.black_value:
-            if not last_col and image[bottom, col + 1] == self.black_value:
-                distance = abs(middle_prev - bottom)
-                if distance < nearest_distance:
-                    nearest_distance = distance
-                    neighbor = bottom
-            bottom += 1
         while top > 0 and image[top, col] == self.black_value:
             if not last_col and image[top, col + 1] == self.black_value:
                 distance = abs(middle_prev - top)
@@ -216,7 +210,15 @@ class SkeletonExtractor:
                     nearest_distance = distance
                     neighbor = top
             top -= 1
-        return top, bottom, neighbor
+        while bottom < image.shape[0] and image[bottom, col] == self.black_value:
+            if not last_col and image[bottom, col + 1] == self.black_value:
+                distance = abs(middle_prev - bottom)
+                if distance < nearest_distance:
+                    nearest_distance = distance
+                    neighbor = bottom
+            bottom += 1
+        # Since increments are done at the end op the loops, it overshoots by 1.
+        return top + 1, bottom - 1, neighbor
 
     @staticmethod
     def compute_middle(top, bottom):
@@ -225,7 +227,7 @@ class SkeletonExtractor:
     def get_middle(self, top, middle_prev, bottom):
         guessed = False
         wall = False
-        staffheight_tolerance = 0.75 * self.staffline_height
+        staffheight_tolerance = int(0.75 * self.staffline_height)
 
         if middle_prev == 0:
             middle = SkeletonExtractor.compute_middle(top, bottom)
@@ -259,12 +261,13 @@ class SkeletonExtractor:
 
     def vertical_thinning(self, image):
         skeleton_list = []
-        label = 1
+        label = 99
         for col in range(image.shape[1]):
             for row in range(image.shape[0]):
                 # This pixel has been scanned before, or is white
                 if image[row, col] != self.black_value:
                     continue
+
                 y_values = []
                 line = [col, y_values]
 
@@ -275,8 +278,6 @@ class SkeletonExtractor:
 
                 current_col = col
                 current_row = row
-
-                label += 1
 
                 while True:
                     # top, neighbor = self.up(image, current_col, current_row, middle)
@@ -346,7 +347,7 @@ class SkeletonExtractor:
 
 if __name__ == '__main__':
     sample_dir = data_dir / 'sample' / 'pages'
-    image_path = sample_dir / 'page_1.png'
+    image_path = sample_dir / 'page_165.png'
     image = Image.open(image_path).convert('L')
     tracker = SkeletonExtractor(image, 'horizontal')
     skeleton_list = tracker.get_skeleton_list()
