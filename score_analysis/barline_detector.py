@@ -386,4 +386,4 @@ if __name__ == '__main__':
         systems = detector.detect_barlines(debug=0)
         score_draw = ScoreDraw(image)
         barline_img = score_draw.draw_systems(systems)
-        Image.fromarray(barline_img).save(overlay_paths / image_path.name)
+        barline_img.save(overlay_paths / image_path.name)
