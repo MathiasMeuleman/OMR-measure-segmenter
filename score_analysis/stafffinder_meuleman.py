@@ -641,7 +641,7 @@ class StaffFinder_meuleman():
 
         if debug > 0:
             print('Removing invalid staffs...')
-        rem_groups = [g for g in groups if g.col_end - g.col_start + 1 < max_group_width / 2]
+        rem_groups = [g for g in groups if g.col_end - g.col_start + 1 < 0.75 * max_group_width ]
 
         for g in rem_groups: groups.remove(g)
         if debug > 0 and len(rem_groups) > 0:
