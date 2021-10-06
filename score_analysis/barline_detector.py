@@ -62,7 +62,6 @@ class BarlineDetector:
         """
         Helper data class for BarlineCandidate groups.
         """
-
         def __init__(self):
             self.label = 0
             self.min_y = 0
@@ -80,27 +79,6 @@ class BarlineDetector:
             if first or segment.y + len(segment.x_values) > self.max_y:
                 self.max_y = segment.y + len(segment.x_values)
 
-    class BarlineSegmentGroup:
-        """
-        Helper data class for BarlineSegment groups. Groups are formed when `barline.x_values[0]` is within
-        a `staffspace_height` margin.
-        """
-
-        def __init__(self):
-            self.min_x = 0
-            self.max_x = 0
-            self.angle = 0.0
-            self.segments = []
-
-        def add_segment(self, segment):
-            first = len(self.segments) == 0
-            self.segments.append(segment)
-            if first or segment.x_values[0] < self.min_x:
-                self.min_x = segment.x_values[0]
-            if first or segment.x_values[0] > self.max_x:
-                self.max_x = segment.x_values[0]
-            self.angle = sum([s.angle for s in self.segments]) / len(self.segments)
-
     def detect_barlines(self, debug=0):
         """
         Detect barlines on the ScoreImage. The following steps are taken:
@@ -113,20 +91,26 @@ class BarlineDetector:
             spanning (approximately) the entire height of the system. From these selected barline candidates,
             boundaries of a system in the vertical direction are determined.
          4) In each system the candidate barlines are grouped into barline groups. Candidate barlines are grouped
-            together when they are within 2 * staffspace_height of horizontal distance of each other. From each group,
-            overlap in the horizontal direction is then removed by keeping the longest of the overlapping segments.
-            This yields a Barline with segments that do not overlap horizontally, and fall in neighboring columns,
+            together when they don't overlap horizontally and approximately lie on a common line. An imaginary line is
+            drawn in between the candidate and the segment of the group that lies closest to it.
+            The candidate barline is then added to the group when both:
+             1) The angle of the candidate is approximately the same as the average angle of all segments in the group.
+             2) The angle of the imaginary line is approximately the same as the average angle of the group.
+            Otherwise the a new group is started and the candidate is added to the new group.
+            This yields a Barline with segments that do not overlap horizontally and lie on an approximate line,
             meaning they are likely to portray one single full barline.
-         5) Filter out false positives from the barline groups. The used assumption here is that most barlines will
-            consist of approximately the same amount of black pixels throughout the systems, although they may be
-            interrupted and consist of multiple segments. Any barline groups that have less than half the median length
-            are discarded.
-         6) These subsets of BarlineSegments are each used to find a prediction for a single uninterrupted line
-            from the top to the bottom of the vertical system boundaries. By interpolating the parts in between segments
-            that are unknown, any possible curves are followed as closely as possible. All vertical runs from the
-            original skeleton list for which at least 80% of the pixels fall into a margin of 2 * staffline_space of the
-            corresponding predicted pixel are selected as segments for the barline. These are again filtered to remove
-            horizontally overlapping segments. This yields the final Barline.
+         5) Remove Barlines that are close to another Barline. The longest Barline is kept. This is done to prevent
+            double detection of barlines that consist of multiple parallel lines or very think lines.
+         6) The Barlines are each used to find a prediction for a single uninterrupted line from the top to the bottom
+            of the vertical system boundaries. By interpolating the parts in between segments that are unknown,
+            small possible curves are followed as closely as possible. All vertical runs from the original skeleton list
+            for which at least 80% of the pixels fall into a margin of 2 * staffline_space of the corresponding
+            predicted pixel are selected as segments for the barline. These are again filtered to remove horizontally
+            overlapping segments. The remaining segments constitute the enitire Barline.
+         7) A final filtering step is done that removes Barlines that don't span most of the vertical height of the
+            system. Since the longest segment, referenced in Step 3, can be larger than the other Barlines when they are
+            the first Barline of the system, the filtering is based on the second longest segment when its min and max
+            y position don't exceed that of the longest segment.
         :returns A list of Systems, each containing a list of Barlines, each containing a list of BarlineSegments.
         """
         # Step 1: Extract skeletons
@@ -159,55 +143,46 @@ class BarlineDetector:
 
         label = 1
         systems = []
-        grouped_segment_coll = []
         for system_group in system_groups:
             system_group.segments.sort(key=lambda s: s.x_values[0])
 
-            # Step 4: Group segments further into barline groups. Groupings are made based on segment orientation and placement.
-            # If two segments have approximately the same orientation, and their placement overlaps in extrapolation, group them together.
-            grouped_segments = []
-            current_group = self.BarlineSegmentGroup()
-            for i, segment in enumerate(system_group.segments):
-                if len(current_group.segments) > 0:
-                    if self.segment_overlaps_group(current_group, segment) \
-                            or abs(self.group_to_segment_angle(current_group, segment) - current_group.angle) > 0.05 \
-                            or abs(segment.angle - current_group.angle) > 0.05:
-                        grouped_segments.append(current_group)
-                        current_group = self.BarlineSegmentGroup()
-                        label += 1
-                segment.label = label
-                current_group.add_segment(segment)
-            grouped_segments.append(current_group)
-
-            # Step 5: Remove grouped segments that are close together. The group with the longest summed length is kept.
-            remove_grouped_segments = []
-            current_group = grouped_segments[0]
-            current_x = grouped_segments[0].segments[0].x_values[0]
-            for i in range(1, len(grouped_segments)):
-                group = grouped_segments[i]
-                group_x = group.segments[0].x_values[0]
-                if abs(current_x - group_x) < 3 * self.staffspace_height:
-                    if sum([len(s.x_values) for s in current_group.segments]) > sum(
-                            [len(s.x_values) for s in group.segments]):
-                        remove_grouped_segments.append(group)
-                    else:
-                        remove_grouped_segments.append(current_group)
-                        current_group = group
-                    current_x = group_x
-                else:
-                    current_group = group
-                    current_x = group.segments[0].x_values[0]
-            for group in remove_grouped_segments:
-                grouped_segments.remove(group)
-            grouped_segment_coll.extend(grouped_segments)
-
+            # Step 4: Group segments further into barline groups. Groupings are made based on segment orientation.
             barlines = []
-            for group in grouped_segments:
-                barline = Barline()
-                for segment in group.segments:
-                    barline.add_segment(segment)
-                barline.label = barline.segments[0].label
-                barlines.append(barline)
+            current_barline = Barline()
+            current_barline.label = label
+            for i, segment in enumerate(system_group.segments):
+                if len(current_barline.segments) > 0:
+                    if self.segment_overlaps_group(current_barline, segment) \
+                            or abs(self.group_to_segment_angle(current_barline, segment) - current_barline.angle) > 0.05 \
+                            or abs(segment.angle - current_barline.angle) > 0.05:
+                        barlines.append(current_barline)
+                        label += 1
+                        current_barline = Barline()
+                        current_barline.label = label
+                segment.label = label
+                current_barline.add_segment(segment)
+            barlines.append(current_barline)
+
+            # Step 5: Remove grouped segments that are close together. The group with the largest summed length is kept.
+            remove_barlines = []
+            current_barline = barlines[0]
+            current_x = current_barline.segments[0].x_values[0]
+            for i in range(1, len(barlines)):
+                barline = barlines[i]
+                barline_x = barline.segments[0].x_values[0]
+                if abs(current_x - barline_x) < 3 * self.staffspace_height:
+                    if sum([len(s.x_values) for s in current_barline.segments]) > sum(
+                            [len(s.x_values) for s in barline.segments]):
+                        remove_barlines.append(barline)
+                    else:
+                        remove_barlines.append(current_barline)
+                        current_barline = barline
+                    current_x = barline_x
+                else:
+                    current_barline = barline
+                    current_x = barline.segments[0].x_values[0]
+            for barline in remove_barlines:
+                barlines.remove(barline)
 
             # Step 6: Predict a barline spanning the entire height of the system group. All skeletons that are close to
             # this prediction are selected as being part of the final Barline.
@@ -245,6 +220,7 @@ class BarlineDetector:
                 system.add_barline(new_barline)
                 label += 1
 
+            # Step 7: Filter out false Barlines that don't span the entire system height, modulo a margin.
             system.barlines.sort(key=lambda b: sum([len(s.x_values) for s in b.segments]), reverse=True)
             remove_barlines = []
             min_y = max(system.barlines[0].min_y, system.barlines[1].min_y)
@@ -253,7 +229,6 @@ class BarlineDetector:
                 if barline.min_y - min_y > 3 * self.staffspace_height or \
                         max_y - barline.max_y > 3 * self.staffspace_height:
                     remove_barlines.append(barline)
-
             for barline in remove_barlines:
                 system.barlines.remove(barline)
 
@@ -280,15 +255,6 @@ class BarlineDetector:
                     for row in range(len(segment.x_values)):
                         grouped_img[segment.y + row, segment.x_values[row] - 2:segment.x_values[row] + 2] = color
             Image.fromarray(grouped_img).save('grouped_candidate_barlines.png')
-
-            grouped_segments_img = np.array(ImageOps.invert(extractor.skeleton_image).convert('RGB'))
-            for group in grouped_segment_coll:
-                for segment in group.segments:
-                    color = (255, segment.label * 100, 0)
-                    for row in range(len(segment.x_values)):
-                        grouped_segments_img[segment.y + row,
-                        segment.x_values[row] - 2:segment.x_values[row] + 2] = color
-            Image.fromarray(grouped_segments_img).save('grouped_barline_segments.png')
 
             prediction_img = np.array(ImageOps.invert(extractor.skeleton_image).convert('RGB'))
             for system in systems:
@@ -474,12 +440,10 @@ if __name__ == '__main__':
     barline_paths.mkdir(parents=True, exist_ok=True)
     overlay_paths = data_dir / 'sample' / 'barline_overlays'
     overlay_paths.mkdir(parents=True, exist_ok=True)
-    # for image_path in tqdm((data_dir / 'sample' / 'pages_bu').iterdir()):
-    for image_path in [data_dir / 'sample' / 'pages_bu' / 'page_19.png']:
+    for image_path in tqdm((data_dir / 'sample' / 'pages').iterdir()):
         image = Image.open(image_path)
-        # detector = BarlineDetector(image, output_path=barline_paths / (image_path.stem + '.json'))
-        detector = BarlineDetector(image)
-        systems = detector.detect_barlines(debug=1)
+        detector = BarlineDetector(image, output_path=barline_paths / (image_path.stem + '.json'))
+        systems = detector.detect_barlines(debug=0)
         score_draw = ScoreDraw(image)
         barline_img = score_draw.draw_systems(systems)
-        barline_img.save(data_dir / image_path.name)
+        barline_img.save(overlay_paths / image_path.name)
