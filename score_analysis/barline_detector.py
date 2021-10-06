@@ -1,6 +1,5 @@
 import json
 from pathlib import Path
-from statistics import median
 
 import numpy as np
 from PIL import Image, ImageOps
@@ -22,28 +21,76 @@ class BarlineDetector:
         self.output_path = Path(output_path) if output_path is not None else None
 
         if len_threshold == 0:
-            # Default length threshold is set at the height of two staffs of 5 stafflines each.
+            # Default length threshold is set at the height of 2 staffs of 5 stafflines each.
             staff_height = 5 * self.staffspace_height + 5 * self.staffline_height
             self.len_threshold = staff_height * 2.5
         else:
             self.len_threshold = len_threshold
 
-    class SegmentGroup:
+    def overlap(self, segment, start, end):
+        if isinstance(segment, BarlineSegment):
+            y = segment.y
+            x_len = len(segment.x_values)
+        elif isinstance(segment, list) and len(segment) == 2:
+            y = segment[0]
+            x_len = len(segment[1])
+        else:
+            raise ValueError('Segment not of type BarlineSegment or Skeleton')
+        return start <= y <= end or start <= y + x_len <= end
+
+    def segment_overlaps_group(self, grouped_segments, segment):
+        return any([self.overlap(s, segment.y, segment.y + len(segment.x_values)) or
+                    self.overlap(segment, s.y, s.y + len(s.x_values)) for s in grouped_segments.segments])
+
+    def group_to_segment_angle(self, grouped_segments, segment):
+        if len(grouped_segments.segments) == 0:
+            raise ValueError('Group has no segments')
+        if self.segment_overlaps_group(grouped_segments, segment):
+            raise NotImplementedError('Group to segment angle not supported for segments that overlaps group')
+        i = 0
+        while i < len(grouped_segments.segments) - 1 and grouped_segments.segments[i].y < segment.y:
+            i += 1
+        closest_segment = grouped_segments.segments[i]
+        if i < len(grouped_segments.segments) - 1 and segment.y - (closest_segment.y + len(closest_segment.x_values)) > grouped_segments.segments[i + 1].y - (segment.y + len(segment.x_values)):
+            closest_segment = grouped_segments.segments[i + 1]
+        if segment.y < closest_segment.y:
+            return (closest_segment.x_values[0] - segment.x_values[-1]) / (closest_segment.y - (segment.y + len(segment.x_values)))
+        else:
+            return (closest_segment.x_values[-1] - segment.x_values[0]) / (segment.y - (closest_segment.y + len(closest_segment.x_values)))
+
+    class BarlineCandidateGroup:
         """
-        Helper data class for BarlineSegments groups. Groups are formed when `barline.x_values[0]` is within
-        a `staffspace_height` margin.
+        Helper data class for BarlineCandidate groups.
         """
-        def __init__(self, group_distance):
-            self.group_distance = group_distance
-            self.x = 0
-            self.min_x = 0
-            self.max_x = 0
-            self.max_length = 0
+
+        def __init__(self):
+            self.label = 0
+            self.min_y = 0
+            self.max_y = 0
+            self.longest_segment = None
             self.segments = []
 
-        def reaches(self, segment):
-            return len(self.segments) == 0 or \
-                   (self.min_x - self.group_distance <= segment.x_values[0] <= self.max_x + self.group_distance)
+        def add_segment(self, segment):
+            first = len(self.segments) == 0
+            self.segments.append(segment)
+            if self.longest_segment is None or len(segment.x_values) > len(self.longest_segment.x_values):
+                self.longest_segment = segment
+            if first or segment.y < self.min_y:
+                self.min_y = segment.y
+            if first or segment.y + len(segment.x_values) > self.max_y:
+                self.max_y = segment.y + len(segment.x_values)
+
+    class BarlineSegmentGroup:
+        """
+        Helper data class for BarlineSegment groups. Groups are formed when `barline.x_values[0]` is within
+        a `staffspace_height` margin.
+        """
+
+        def __init__(self):
+            self.min_x = 0
+            self.max_x = 0
+            self.angle = 0.0
+            self.segments = []
 
         def add_segment(self, segment):
             first = len(self.segments) == 0
@@ -52,9 +99,7 @@ class BarlineDetector:
                 self.min_x = segment.x_values[0]
             if first or segment.x_values[0] > self.max_x:
                 self.max_x = segment.x_values[0]
-            if len(segment.x_values) > self.max_length:
-                self.x = segment.x_values[0]
-                self.max_length = len(segment.x_values)
+            self.angle = sum([s.angle for s in self.segments]) / len(self.segments)
 
     def detect_barlines(self, debug=0):
         """
@@ -86,7 +131,7 @@ class BarlineDetector:
         """
         # Step 1: Extract skeletons
         extractor = SkeletonExtractor(self.image, 'vertical')
-        skeleton_list = extractor.get_skeleton_list()
+        skeleton_list = extractor.get_skeleton_list(window=5)
 
         # Step 2: Filter skeletons by threshold length
         candidate_lines = [BarlineSegment(line[0], line[1]) for line in skeleton_list
@@ -96,20 +141,17 @@ class BarlineDetector:
         # Step 3: Group candidate lines into system groups based on overlapping y values.
         label = 1
         system_groups = []
-        # Using the Barline class here is not entirely correct, since the horizontal direction is not considered,
-        # but exactly fits the purpose of grouping BarlineSegments.
-        current_candidate = Barline()
+        current_candidate = self.BarlineCandidateGroup()
         current_candidate.label = label
         for segment in candidate_lines:
             if segment.label > 0:
                 continue
-            if len(current_candidate.segments) > 0 \
-                    and (segment.y + len(segment.x_values) < current_candidate.min_y
-                         or segment.y > current_candidate.max_y):
+            longest = current_candidate.longest_segment
+            if longest is not None and segment.y > longest.y + len(longest.x_values):
                 # End of overlaps: start with new Barline
                 system_groups.append(current_candidate)
                 label += 1
-                current_candidate = Barline()
+                current_candidate = self.BarlineCandidateGroup()
                 current_candidate.label = label
             segment.label = label
             current_candidate.add_segment(segment)
@@ -117,39 +159,55 @@ class BarlineDetector:
 
         label = 1
         systems = []
-        group_distance = 2 * self.staffspace_height
+        grouped_segment_coll = []
         for system_group in system_groups:
             system_group.segments.sort(key=lambda s: s.x_values[0])
 
-            # Step 4: Group segments further into barline groups. Overlap in the horizontal direction is eliminated by
-            # keeping the longest of the overlapping segments.
+            # Step 4: Group segments further into barline groups. Groupings are made based on segment orientation and placement.
+            # If two segments have approximately the same orientation, and their placement overlaps in extrapolation, group them together.
             grouped_segments = []
-            current_group = self.SegmentGroup(group_distance=group_distance)
-            for segment in system_group.segments:
-                if not current_group.reaches(segment):
-                    grouped_segments.append(current_group)
-                    current_group = self.SegmentGroup(group_distance=group_distance)
+            current_group = self.BarlineSegmentGroup()
+            for i, segment in enumerate(system_group.segments):
+                if len(current_group.segments) > 0:
+                    if self.segment_overlaps_group(current_group, segment) \
+                            or abs(self.group_to_segment_angle(current_group, segment) - current_group.angle) > 0.05 \
+                            or abs(segment.angle - current_group.angle) > 0.05:
+                        grouped_segments.append(current_group)
+                        current_group = self.BarlineSegmentGroup()
+                        label += 1
+                segment.label = label
                 current_group.add_segment(segment)
             grouped_segments.append(current_group)
+
+            # Step 5: Remove grouped segments that are close together. The group with the longest summed length is kept.
+            remove_grouped_segments = []
+            current_group = grouped_segments[0]
+            current_x = grouped_segments[0].segments[0].x_values[0]
+            for i in range(1, len(grouped_segments)):
+                group = grouped_segments[i]
+                group_x = group.segments[0].x_values[0]
+                if abs(current_x - group_x) < 3 * self.staffspace_height:
+                    if sum([len(s.x_values) for s in current_group.segments]) > sum(
+                            [len(s.x_values) for s in group.segments]):
+                        remove_grouped_segments.append(group)
+                    else:
+                        remove_grouped_segments.append(current_group)
+                        current_group = group
+                    current_x = group_x
+                else:
+                    current_group = group
+                    current_x = group.segments[0].x_values[0]
+            for group in remove_grouped_segments:
+                grouped_segments.remove(group)
+            grouped_segment_coll.extend(grouped_segments)
+
             barlines = []
             for group in grouped_segments:
                 barline = Barline()
-                barline.label = label
-                group.segments.sort(key=lambda s: len(s.x_values), reverse=True)
                 for segment in group.segments:
-                    overlaps = False
-                    for barline_segment in barline.segments:
-                        if barline_segment.y <= segment.y <= barline_segment.y + len(barline_segment.x_values) or \
-                                barline_segment.y <= segment.y + len(segment.x_values) <= barline_segment.y + len(barline_segment.x_values):
-                            overlaps = True
-                    if not overlaps:
-                        barline.add_segment(segment)
-                label += 1
+                    barline.add_segment(segment)
+                barline.label = barline.segments[0].label
                 barlines.append(barline)
-
-            # Step 5: Filter false positives from the barline groups
-            median_length = median([sum([len(s.x_values) for s in barline.segments]) for barline in barlines])
-            barlines = [b for b in barlines if sum([len(s.x_values) for s in b.segments]) > 0.5 * median_length]
 
             # Step 6: Predict a barline spanning the entire height of the system group. All skeletons that are close to
             # this prediction are selected as being part of the final Barline.
@@ -157,7 +215,7 @@ class BarlineDetector:
             system = System()
             for barline in barlines:
                 barline.interpolate(system_group.min_y, system_group.max_y)
-                for skeleton in [skeleton for skeleton in skeleton_list if system_group.min_y <= skeleton[0] <= system_group.max_y]:
+                for skeleton in [skeleton for skeleton in skeleton_list if self.overlap(skeleton, system_group.min_y, system_group.max_y)]:
                     margin_count = 0
                     start_idx = skeleton[0] - system_group.min_y
                     stop_idx = min(len(barline.prediction) - 1, skeleton[0] - system_group.min_y + len(skeleton[1]))
@@ -186,6 +244,23 @@ class BarlineDetector:
                 new_barline.label = barline.label
                 system.add_barline(new_barline)
                 label += 1
+
+            system.barlines.sort(key=lambda b: sum([len(s.x_values) for s in b.segments]), reverse=True)
+            remove_barlines = []
+            min_y = max(system.barlines[0].min_y, system.barlines[1].min_y)
+            max_y = min(system.barlines[0].max_y, system.barlines[1].max_y)
+            for barline in system.barlines:
+                if barline.min_y - min_y > 3 * self.staffspace_height or \
+                        max_y - barline.max_y > 3 * self.staffspace_height:
+                    remove_barlines.append(barline)
+
+            for barline in remove_barlines:
+                system.barlines.remove(barline)
+
+            # Sort barlines and their segments from left to right
+            for barline in system.barlines:
+                barline.segments.sort(key=lambda s: s.y)
+            system.barlines.sort(key=lambda b: b.segments[0].x_values[0])
             systems.append(system)
 
         if debug > 0:
@@ -195,7 +270,7 @@ class BarlineDetector:
             candidate_img = np.array(ImageOps.invert(extractor.skeleton_image).convert('RGB'))
             for segment in candidate_lines:
                 for row in range(len(segment.x_values)):
-                    candidate_img[segment.y + row, segment.x_values[row]-2:segment.x_values[row]+2] = (255, 0, 0)
+                    candidate_img[segment.y + row, segment.x_values[row] - 2:segment.x_values[row] + 2] = (255, 0, 0)
             Image.fromarray(candidate_img).save('candidate_barlines.png')
 
             grouped_img = np.array(ImageOps.invert(extractor.skeleton_image).convert('RGB'))
@@ -203,8 +278,17 @@ class BarlineDetector:
                 color = (255, barline.label * 50, 0)
                 for segment in barline.segments:
                     for row in range(len(segment.x_values)):
-                        grouped_img[segment.y + row, segment.x_values[row]-2:segment.x_values[row]+2] = color
+                        grouped_img[segment.y + row, segment.x_values[row] - 2:segment.x_values[row] + 2] = color
             Image.fromarray(grouped_img).save('grouped_candidate_barlines.png')
+
+            grouped_segments_img = np.array(ImageOps.invert(extractor.skeleton_image).convert('RGB'))
+            for group in grouped_segment_coll:
+                for segment in group.segments:
+                    color = (255, segment.label * 100, 0)
+                    for row in range(len(segment.x_values)):
+                        grouped_segments_img[segment.y + row,
+                        segment.x_values[row] - 2:segment.x_values[row] + 2] = color
+            Image.fromarray(grouped_segments_img).save('grouped_barline_segments.png')
 
             prediction_img = np.array(ImageOps.invert(extractor.skeleton_image).convert('RGB'))
             for system in systems:
@@ -213,7 +297,8 @@ class BarlineDetector:
                              150 + (111 * (barline.label + 1)) % 106,
                              150 + (201 * (barline.label + 2)) % 106)
                     for row in range(len(barline.prediction)):
-                        prediction_img[barline.prediction_y_start + row, barline.prediction[row]-2:barline.prediction[row]+2] = color
+                        prediction_img[barline.prediction_y_start + row,
+                        barline.prediction[row] - 2:barline.prediction[row] + 2] = color
             Image.fromarray(prediction_img).save('barline_predictions.png')
 
             barline_img = np.array(ImageOps.invert(extractor.skeleton_image).convert('RGB'))
@@ -224,7 +309,7 @@ class BarlineDetector:
                              150 + (201 * (barline.label + 2)) % 106)
                     for segment in barline.segments:
                         for row in range(len(segment.x_values)):
-                            barline_img[segment.y + row, segment.x_values[row]-2:segment.x_values[row]+2] = color
+                            barline_img[segment.y + row, segment.x_values[row] - 4:segment.x_values[row] + 4] = color
             Image.fromarray(barline_img).save('barlines.png')
 
         if self.output_path is not None:
@@ -237,9 +322,11 @@ class BarlineSegment:
     """
     Data class that represents a barline segment.
     """
+
     def __init__(self, y, x_values):
         self.y = y
         self.x_values = x_values
+        self.angle = (x_values[0] - x_values[-1]) / len(x_values)
         self.label = 0
 
     @staticmethod
@@ -255,11 +342,13 @@ class Barline:
     """
     Helper class that represents a Barline. A Barline consists of several BarlineSegments.
     """
+
     def __init__(self):
         self.label = 0
         self.segments = []
         self.min_y = 0
         self.max_y = 0
+        self.angle = 0.0
         self.prediction = []
         self.prediction_y_start = 0
 
@@ -270,6 +359,7 @@ class Barline:
             self.min_y = segment.y
         if first or segment.y + len(segment.x_values) > self.max_y:
             self.max_y = segment.y + len(segment.x_values)
+        self.angle = sum([s.angle for s in self.segments]) / len(self.segments)
 
     def remove_segment(self, segment):
         self.segments.remove(segment)
@@ -282,6 +372,10 @@ class Barline:
                 max_y = s.y + len(s.x_values)
         self.min_y = min_y
         self.max_y = max_y
+        if len(self.segments) > 0:
+            self.angle = sum([s.angle for s in self.segments]) / len(self.segments)
+        else:
+            self.angle = 0.0
 
     def interpolate(self, start, end):
         """
@@ -380,10 +474,12 @@ if __name__ == '__main__':
     barline_paths.mkdir(parents=True, exist_ok=True)
     overlay_paths = data_dir / 'sample' / 'barline_overlays'
     overlay_paths.mkdir(parents=True, exist_ok=True)
-    for image_path in tqdm((data_dir / 'sample' / 'pages').iterdir()):
+    # for image_path in tqdm((data_dir / 'sample' / 'pages_bu').iterdir()):
+    for image_path in [data_dir / 'sample' / 'pages_bu' / 'page_19.png']:
         image = Image.open(image_path)
-        detector = BarlineDetector(image, output_path=barline_paths / (image_path.stem + '.json'))
-        systems = detector.detect_barlines(debug=0)
+        # detector = BarlineDetector(image, output_path=barline_paths / (image_path.stem + '.json'))
+        detector = BarlineDetector(image)
+        systems = detector.detect_barlines(debug=1)
         score_draw = ScoreDraw(image)
         barline_img = score_draw.draw_systems(systems)
-        barline_img.save(overlay_paths / image_path.name)
+        barline_img.save(data_dir / image_path.name)
