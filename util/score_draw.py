@@ -12,16 +12,18 @@ class ScoreDraw:
     colors = ['red', 'orange', 'green', 'blue', 'purple']
 
     def draw_staffs(self, staffs):
-        draw = ImageDraw.Draw(self.image, mode='RGBA')
+        image = self.image.copy()
+        draw = ImageDraw.Draw(image, mode='RGBA')
         for i, staff in enumerate(staffs):
             color = ImageColor.getrgb(self.colors[i % len(self.colors)])
             for line in staff.stafflines:
                 draw.line(((line.start, line.y), (line.end, line.y)), fill=color, width=5)
         del draw
-        return self.image
+        return image
 
     def draw_systems(self, systems):
-        barline_img = np.array(self.image)
+        image = self.image.copy()
+        barline_img = np.array(image)
         for system in systems:
             for i, barline in enumerate(system.barlines):
                 color = ImageColor.getrgb(self.colors[i % len(self.colors)])
@@ -31,9 +33,10 @@ class ScoreDraw:
         return Image.fromarray(barline_img)
 
     def draw_measures(self, measures):
-        draw = ImageDraw.Draw(self.image)
+        image = self.image.copy()
+        draw = ImageDraw.Draw(image)
         for measure in measures:
             color = ImageColor.getrgb(self.colors[measure.system % len(self.colors)])
             draw.rectangle(((measure.start, measure.top), (measure.end, measure.bottom)), outline=color, width=5)
         del draw
-        return self.image
+        return image
