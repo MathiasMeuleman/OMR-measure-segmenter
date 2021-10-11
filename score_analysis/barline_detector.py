@@ -108,9 +108,10 @@ class BarlineDetector:
             predicted pixel are selected as segments for the barline. These are again filtered to remove horizontally
             overlapping segments. The remaining segments constitute the enitire Barline.
          7) A final filtering step is done that removes Barlines that don't span most of the vertical height of the
-            system. Since the longest segment, referenced in Step 3, can be larger than the other Barlines when they are
-            the first Barline of the system, the filtering is based on the second longest segment when its min and max
-            y position don't exceed that of the longest segment.
+            system or don't fill at least 50% of pixels in between their vertical limits. Since the longest segment,
+            referenced in Step 3, can be larger than the other Barlines when they are the first Barline of the system,
+            the filtering is based on the second longest segment when its min and max y position don't exceed that
+            of the longest segment.
         :returns A list of Systems, each containing a list of Barlines, each containing a list of BarlineSegments.
         """
         # Step 1: Extract skeletons
@@ -170,7 +171,7 @@ class BarlineDetector:
             for i in range(1, len(barlines)):
                 barline = barlines[i]
                 barline_x = barline.segments[0].x_values[0]
-                if abs(current_x - barline_x) < 3 * self.staffspace_height:
+                if abs(current_x - barline_x) < 5 * self.staffspace_height:
                     if sum([len(s.x_values) for s in current_barline.segments]) > sum(
                             [len(s.x_values) for s in barline.segments]):
                         remove_barlines.append(barline)
@@ -192,7 +193,7 @@ class BarlineDetector:
                 barline.interpolate(system_group.min_y, system_group.max_y)
                 for skeleton in [skeleton for skeleton in skeleton_list if self.overlap(skeleton, system_group.min_y, system_group.max_y)]:
                     margin_count = 0
-                    start_idx = skeleton[0] - system_group.min_y
+                    start_idx = max(0, skeleton[0] - system_group.min_y)
                     stop_idx = min(len(barline.prediction) - 1, skeleton[0] - system_group.min_y + len(skeleton[1]))
                     if stop_idx - start_idx == 0:
                         continue
@@ -222,12 +223,19 @@ class BarlineDetector:
 
             # Step 7: Filter out false Barlines that don't span the entire system height, modulo a margin.
             system.barlines.sort(key=lambda b: sum([len(s.x_values) for s in b.segments]), reverse=True)
+
             remove_barlines = []
-            min_y = max(system.barlines[0].min_y, system.barlines[1].min_y)
-            max_y = min(system.barlines[0].max_y, system.barlines[1].max_y)
+            min_y = system.barlines[0].min_y
+            max_y = system.barlines[0].max_y
+            if len(system.barlines) > 1:
+                if system.barlines[1].min_y > min_y:
+                    min_y = system.barlines[1].min_y
+                if system.barlines[1].max_y < max_y:
+                    max_y = system.barlines[1].max_y
             for barline in system.barlines:
-                if barline.min_y - min_y > 3 * self.staffspace_height or \
-                        max_y - barline.max_y > 3 * self.staffspace_height:
+                if barline.min_y - min_y > 5 * self.staffspace_height or \
+                        max_y - barline.max_y > 5 * self.staffspace_height or \
+                        sum([len(s.x_values) for s in barline.segments]) < 0.5 * (barline.max_y - barline.min_y):
                     remove_barlines.append(barline)
             for barline in remove_barlines:
                 system.barlines.remove(barline)
@@ -446,4 +454,4 @@ if __name__ == '__main__':
         systems = detector.detect_barlines(debug=0)
         score_draw = ScoreDraw(image)
         barline_img = score_draw.draw_systems(systems)
-        barline_img.save(overlay_paths / image_path.name)
+        barline_img.save(data_dir / image_path.name)
