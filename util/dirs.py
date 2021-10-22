@@ -10,6 +10,10 @@ musicdata_dir = segmenter_data_dir / 'musicdata'
 stafffinder_testset_dir = segmenter_data_dir / 'stafffinder-testset'
 
 
+def page_sort_key(path):
+    return int(path.stem.split('_')[1])
+
+
 def get_musicdata_scores(follow_parts=True):
     scores = sorted([score for score in musicdata_dir.iterdir() if score.is_dir()])
     combined = []

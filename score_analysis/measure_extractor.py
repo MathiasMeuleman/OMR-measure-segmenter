@@ -6,9 +6,11 @@ from PIL import Image
 from operator import attrgetter
 from tqdm import tqdm
 
+from score_analysis.barline_detector import System
 from score_analysis.measure_detector import Measure
 from score_analysis.score_image import ScoreImage
-from util.dirs import data_dir
+from score_analysis.staff_detector import Staff
+from util.dirs import data_dir, get_musicdata_scores, page_sort_key
 
 
 class MeasureExtractor:
@@ -35,6 +37,21 @@ class MeasureExtractor:
             self.measures = [Measure.from_json(json_data) for json_data in json.load(f)['measures']]
         self.measures.sort(key=attrgetter('system', 'start', 'top'))
         self.systems = [self.System(list(v)) for k, v in groupby(self.measures, key=attrgetter('system'))]
+
+        for i, system in enumerate(self.systems):
+            bar = 0
+            staff = 0
+            prev_top = system.measures[0].top + 1
+            for j, measure in enumerate(system.measures):
+                if measure.top < prev_top:
+                    bar += 1
+                    staff = 1
+                else:
+                    staff += 1
+                prev_top = measure.top
+                measure.system = measure.system + 1
+                measure.bar = bar
+                measure.staff = staff
 
     def get_measures_bb(self):
         """Dumb bounding box finder, maximizes spacing around measures equally, without overlap."""
@@ -78,16 +95,44 @@ class MeasureExtractor:
         self.get_measures_bb()
         for system in self.systems:
             for i, measure in enumerate(system.measures):
-                name = 'system_{}_measure_{}.png'.format(measure.system + 1, i)
+                name = 'system_{}_measure_{}.png'.format(measure.system + 1, i + 1)
                 measure_image = self.image.crop(measure.bb)
                 measure_image.save(self.output_path / name)
 
 
+def filter_pages(part):
+    """Filter out pages from this part that do not adhere to the true annotations."""
+    with open(part / 'annotations.txt') as f:
+        annotations = [list(map(lambda x: list(map(int, x.split(','))), line.rstrip().split(' '))) for line in f]
+    filtered_pages = []
+    for i, page in enumerate(sorted((part / 'pages').iterdir(), key=page_sort_key)):
+        json_name = page.stem + '.json'
+        with open(part / 'staffs' / json_name) as f:
+            staffs = [Staff.from_json(json_data) for json_data in json.load(f)['staffs']]
+        with open(part / 'barlines' / json_name) as f:
+            systems = [System.from_json(json_data) for json_data in json.load(f)['systems']]
+        page_annotations = annotations[i]
+        include = True
+        if len(page_annotations) != len(systems):
+            include = False
+        else:
+            if not all([len(sys.barlines) - 1 == ann[1] for sys, ann in zip(systems, page_annotations)]):
+                include = False
+            if len(staffs) != sum([ann[0] for ann in page_annotations]):
+                include = False
+
+        if include:
+            filtered_pages.append(page)
+    return filtered_pages
+
+
 if __name__ == '__main__':
-    measures_path = data_dir / 'sample' / 'measures'
-    for page in tqdm(sorted((data_dir / 'sample' / 'pages').iterdir())):
-        measure_images_path = data_dir / 'sample' / 'measure_images' / page.stem
+    part = data_dir / 'sample'
+    measures_path = part / 'measures'
+    for page in tqdm(filter_pages(part)):
+        measure_images_path = part / 'measure_images' / page.stem
         measure_images_path.mkdir(parents=True, exist_ok=True)
         measure_path = measures_path / (page.stem + '.json')
-        MeasureExtractor(Image.open(page), measure_path, measure_images_path).extract_measures()
+        extractor = MeasureExtractor(Image.open(page), measure_path, measure_images_path)
+        extractor.extract_measures()
 
