@@ -49,7 +49,6 @@ class MeasureExtractor:
                 else:
                     staff += 1
                 prev_top = measure.top
-                measure.system = measure.system + 1
                 measure.bar = bar
                 measure.staff = staff
 

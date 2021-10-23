@@ -14,8 +14,8 @@ def page_sort_key(path):
     return int(path.stem.split('_')[1])
 
 
-def get_musicdata_scores(follow_parts=True):
-    scores = sorted([score for score in musicdata_dir.iterdir() if score.is_dir()])
+def get_musicdata_scores(follow_parts=True, sort_reverse=False):
+    scores = sorted([score for score in musicdata_dir.iterdir() if score.is_dir()], reverse=sort_reverse)
     combined = []
     for score in scores:
         parts = sorted([d for d in score.iterdir() if d.is_dir() and 'part_' in d.name])

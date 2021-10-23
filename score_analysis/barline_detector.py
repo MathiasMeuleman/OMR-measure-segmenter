@@ -244,7 +244,10 @@ class BarlineDetector:
             for barline in system.barlines:
                 barline.segments.sort(key=lambda s: s.y)
             system.barlines.sort(key=lambda b: b.segments[0].x_values[0])
-            systems.append(system)
+
+            # Avoid false positives in systems. Systems with only one barline cannot exist in music.
+            if len(system.barlines) > 1:
+                systems.append(system)
 
         if debug > 0:
             extractor.skeleton_list_to_image()
