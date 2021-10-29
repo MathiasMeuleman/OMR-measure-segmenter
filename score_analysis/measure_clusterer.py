@@ -68,6 +68,8 @@ class MeasureClusterer:
         self.measure_images = None
         self.dist_matrix = None
         self.clusters = None
+        self.labels = None
+        self.medoids = None
 
     def load_measure_images(self, store_images=True):
         print('Loading measures...')
@@ -186,7 +188,7 @@ class MeasureClusterer:
         silhouette_scores = []
         clusterings = []
         float_dist_matrix = self.dist_matrix.astype(np.float32)
-        for k in tqdm(range(2, 5)):
+        for k in tqdm(range(11, 13)):
             c = fasterpam(float_dist_matrix, k)
             score = silhouette_score(float_dist_matrix, c.labels, metric='precomputed')
             clusterings.append(c)
@@ -195,9 +197,19 @@ class MeasureClusterer:
         c = clusterings[best_score_idx]
         for i in range(len(self.measure_images)):
             self.measure_images[i].label = c.labels[i]
+        self.labels = c.labels
+        self.medoids = c.medoids
         measures = sorted(self.measure_images, key=attrgetter('label'))
         clustered_measures = sorted([list(v) for k, v in groupby(measures, key=attrgetter('label'))], key=lambda l: len(l), reverse=True)
         self.clusters = [MeasureCluster(measures, measures[0].label, c.medoids[measures[0].label]) for measures in clustered_measures]
+
+    def save_clusters(self, save_dir):
+        np.save(Path(save_dir) / 'cluster_labels.npy', self.labels)
+        np.save(Path(save_dir) / 'cluster_medoids.npy', self.medoids)
+
+    def load_clusters(self, save_dir):
+        self.labels = np.load(Path(save_dir) / 'cluster_labels.npy').tolist()
+        self.medoids = np.load(Path(save_dir) / 'cluster_medoids.npy').tolist()
 
     def _get_profile_image(self, measure):
         profile_img = np.ones((measure.image.height, measure.image.width)) * 255
@@ -311,10 +323,12 @@ class MeasureClusterer:
         image.show()
 
 if __name__ == '__main__':
-    # score = musicdata_dir / 'bach_brandenburg_concerto_5_part_1'
-    score = musicdata_dir / 'beethoven_symphony_1'
+    score = musicdata_dir / 'bach_brandenburg_concerto_5_part_1'
+    # score = musicdata_dir / 'beethoven_symphony_4'
     measures_path = score / 'measures'
     images_path = score / 'measure_images'
+    cluster_images = score / 'cluster_images'
+    cluster_images.mkdir(exist_ok=True)
     parts = get_parts(score)
     if len(parts) > 0:
         measures_path = [score / part.name / 'measures' for part in parts]
@@ -327,7 +341,8 @@ if __name__ == '__main__':
 
     clusterer.get_distance_matrix(normalization='smallest')
     clusterer.cluster()
+    clusterer.save_clusters(score)
     for i in range(len(clusterer.clusters)):
         images = clusterer.generate_cluster_images(i, print_position='idx', print_distances=True)
         for j, image in enumerate(images):
-            image.save('cluster_{}.{}.png'.format(i, j))
+            image.save(cluster_images / 'cluster_{}.{}.png'.format(i, j))
