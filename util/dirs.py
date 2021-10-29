@@ -24,3 +24,7 @@ def get_musicdata_scores(follow_parts=True, sort_reverse=False):
         else:
             combined.append(score)
     return combined
+
+
+def get_parts(score):
+    return [part for part in score.iterdir() if part.is_dir() and part.name.startswith('part_')]
