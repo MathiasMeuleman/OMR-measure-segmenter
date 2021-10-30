@@ -9,6 +9,84 @@ from util.dirs import musicdata_dir
 
 MUSIC_DATA_EXTENSIONS = ['.mxl', '.xml', '.musicxml']
 
+none_part = "NONEPART"
+
+
+class ScoreMappingPart:
+
+    def __init__(self, id, name):
+        self.id = id
+        self.name = name
+
+    def __str__(self):
+        return 'Id: {}\nName: {}'.format(self.id, self.name)
+
+    @staticmethod
+    def from_json(json_data):
+        return ScoreMappingPart(json_data['id'], json_data['name'])
+
+
+class ScoreMappingStaff:
+
+    def __init__(self, staffnumber, parts):
+        self.staffnumber = staffnumber
+        self.parts = parts
+
+    def __str__(self):
+        string = 'Staff: {}\nParts:'.format(self.staffnumber)
+        for part in self.parts:
+            string += '\n'
+            if part is none_part:
+                string += part
+            else:
+                string += part.__str__()
+        return string
+
+    @staticmethod
+    def from_json(json_data):
+        staffnumber = json_data['staffNumber']
+        if json_data['parts'] is None:
+            return ScoreMappingStaff(staffnumber, [])
+        return ScoreMappingStaff(staffnumber, [ScoreMappingPart.from_json(part) for part in json_data['parts']])
+
+
+class ScoreMappingSystem:
+
+    def __init__(self, systemnumber, measurestart, measureend, staffs):
+        self.systemnumber = systemnumber
+        self.measurestart = measurestart
+        self.measureend = measureend
+        self.staffs = staffs
+
+    def __str__(self):
+        string = 'System: {}\nMeasures: {}-{}\nStaffs:'.format(self.systemnumber, self.measurestart, self.measureend)
+        for staff in self.staffs:
+            string += '\n' + staff.__str__()
+        return string
+
+    @staticmethod
+    def from_json(json_data):
+        staffs = [ScoreMappingStaff.from_json(staff) for staff in json_data['staffs']]
+        return ScoreMappingSystem(json_data['systemNumber'], json_data['measureStart'], json_data['measureEnd'], staffs)
+
+
+class ScoreMappingPage:
+
+    def __init__(self, pagenumber, systems):
+        self.pagenumber = pagenumber
+        self.systems = systems
+
+    def __str__(self):
+        string = 'Page {}\nSystems:'.format(self.pagenumber)
+        for s in self.systems:
+            string += '\n' + s.__str__()
+        return string
+
+    @staticmethod
+    def from_json(json_data):
+        systems = [ScoreMappingSystem.from_json(system) for system in json_data['systems']]
+        return ScoreMappingPage(json_data['pageNumber'], systems)
+
 
 class ScoreMapper:
 
@@ -19,6 +97,7 @@ class ScoreMapper:
         self.parts = None
         self.annotations = None
         self.groupings = None
+        self.visible_parts_hint = None
         self.log_to_file = log_to_file
         self.logger = self.get_logger()
 
@@ -120,6 +199,18 @@ class ScoreMapper:
             annotations = [list(map(lambda x: list(map(int, x.split(','))), line.rstrip().split(' '))) for line in file]
         self.annotations = annotations
 
+    def load_visibile_parts_hint(self):
+        visible_parts_hint = [[[] for _ in page] for page in self.annotations]
+        visibible_parts_hint_path = self.directory / 'visible_parts_hint.txt'
+        if visibible_parts_hint_path.is_file():
+            with open(visibible_parts_hint_path) as file:
+                hints = file.read().splitlines()
+            for hint in hints:
+                page, system = [int(x) for x in hint.split(':')[0].split('.')[0:2]]
+                ids = hint.split(':')[1].split(',')
+                visible_parts_hint[page - 1][system - 1] = ids
+        self.visible_parts_hint = visible_parts_hint
+
     def load_score(self):
         music_path = self.get_score_path()
         self.logger.warning('Loading score found at: ' + str(music_path.resolve()))
@@ -134,13 +225,18 @@ class ScoreMapper:
         self.load_score()
         self.load_annotations()
         self.parse_groupings()
+        self.load_visibile_parts_hint()
         self.check_count_measures()
         self.initialized = True
 
-    def list_parts(self):
+    def list_parts(self, ids_only=False):
         if self.score is None:
             raise AssertionError('Score not loaded')
-        self.logger.info('\n'.join([str({'id': part.id, 'name': part.partName}) for part in self.parts]))
+        if ids_only:
+            log = '\n'.join([part.id for part in self.parts])
+        else:
+            log = '\n'.join([str({'id': part.id, 'name': part.partName}) for part in self.parts])
+        self.logger.info(log)
 
     @staticmethod
     def get_part_measures(part, start, end):
@@ -165,8 +261,8 @@ class ScoreMapper:
                        for measure in ScoreMapper.get_part_measures(part, start, end))
 
     @staticmethod
-    def generate_annotated_part_group(part_group):
-        return {'parts': [{'id': part.id, 'name': part.partName} for part in part_group]}
+    def generate_annotated_part_group(part_group, staff):
+        return {'parts': [{'id': part.id, 'name': part.partName} for part in part_group], 'staffNumber': staff}
 
     def get_part_groups(self, page, system):
         part_groups = []
@@ -176,26 +272,62 @@ class ScoreMapper:
         grouped_ids = [id for ids in self.groupings[page][system] for id in ids]
         single_parts = [[part] for part in self.parts if part.id not in grouped_ids]
         part_groups.extend(single_parts)
-        return part_groups
+        return self.sort_part_groups(part_groups)
+
+    def sort_part_key(self, order):
+        def _sort_part_key(group):
+            return min([order.index(p.id) for p in group])
+        return _sort_part_key
+
+    def sort_part_groups(self, part_groups):
+        with open(self.directory / 'part_order.txt') as f:
+            order = f.read().splitlines()
+        return sorted(part_groups, key=self.sort_part_key(order))
 
     def match_system(self, page_idx, system_idx, start):
         page_nr, system_nr = page_idx + 1, system_idx + 1
         part_groups = self.get_part_groups(page_idx, system_idx)
         (part_count, measure_count) = self.annotations[page_idx][system_idx]
-        empty_part_groups, non_empty_part_groups = [], []
-        for group in part_groups:
-            (empty_part_groups
-             if self.grouped_parts_is_empty(group, start, start + measure_count)
-             else non_empty_part_groups
-             ).append(group)
-        if len(non_empty_part_groups) > part_count:
-            self.logger.warning([[part.id for part in part_group] for part_group in non_empty_part_groups])
-            raise AssertionError('Found {} non-empty voices in system expected {} at most, at page: {}, system: {}, current_measure: {}'
-                                 .format(len(non_empty_part_groups), part_count, page_nr, system_nr, start))
-        if len(non_empty_part_groups) < part_count:
-            self.logger.info('Found {} empty staffs at page {}, system {}'.format(part_count - len(non_empty_part_groups), page_nr, system_nr))
-        matches = [self.generate_annotated_part_group(grouped_part) for grouped_part in non_empty_part_groups]
-        matches.extend([{'parts': None} for _ in range(part_count - len(non_empty_part_groups))])
+
+        empty_part_groups = [g for g in part_groups if self.grouped_parts_is_empty(g, start, start + measure_count)]
+        part_groups_visible = [not self.grouped_parts_is_empty(g, start, start + measure_count) for g in part_groups]
+        missing_visible_count = part_count - sum(part_groups_visible)
+        if missing_visible_count > 0:
+            self.logger.info('Found {} empty staffs at page {}, system {}'.format(missing_visible_count, page_nr, system_nr))
+        for id in self.visible_parts_hint[page_idx][system_idx]:
+            idx = [parts[0].id for parts in part_groups].index(id)
+            part_groups_visible[idx] = True
+        missing_visible_count = part_count - sum(part_groups_visible)
+        if len(empty_part_groups) == missing_visible_count:
+            part_groups_visible = [True] * part_count
+            missing_visible_count = 0
+        if missing_visible_count > 0:
+            self.logger.warning('Could not match staffs to part groups: Page {}, System {}'.format(page_nr, system_nr))
+        while missing_visible_count > 0:
+            idx = part_groups_visible.index(False)
+            part_groups_visible[idx] = True
+            missing_visible_count -= 1
+
+        matches = []
+        staff = 1
+        for (visible, group) in zip(part_groups_visible, part_groups):
+            if visible:
+                matches.append(self.generate_annotated_part_group(group, staff))
+                staff += 1
+
+            # (empty_part_groups
+            #  if self.grouped_parts_is_empty(group, start, start + measure_count)
+            #  else non_empty_part_groups
+            #  ).append(group)
+        # if len(non_empty_part_groups) > part_count:
+        #     self.logger.warning([[part.id for part in part_group] for part_group in non_empty_part_groups])
+        #     raise AssertionError('Found {} non-empty voices in system expected {} at most, at page: {}, system: {}, current_measure: {}'
+        #                          .format(len(non_empty_part_groups), part_count, page_nr, system_nr, start))
+        # parts = set([p.id for page in self.score_mapping for system in page.systems for staff in system.staffs for p in staff.parts])
+        # if len(non_empty_part_groups) < part_count:
+        #     self.logger.info('Found {} empty staffs at page {}, system {}'.format(part_count - len(non_empty_part_groups), page_nr, system_nr))
+        # matches = [self.generate_annotated_part_group(grouped_part, ) for grouped_part in non_empty_part_groups]
+        # matches.extend([{'parts': None} for _ in range(part_count - len(non_empty_part_groups))])
         return matches
 
     def match_page(self, page_number):
@@ -290,6 +422,7 @@ def match_score(path):
     source = ScoreMapper(path, log_to_file=True)
     source.init()
     # source.list_parts()
+    # source.list_parts(ids_only=True)
     source.match_score()
     # source.get_matched_score()
 
@@ -353,7 +486,8 @@ if __name__ == '__main__':
         'mahler_symphony_4',
     ]
 
-    path = musicdata_dir / part_directories[-1]
+    # path = musicdata_dir / part_directories[0]
+    path = musicdata_dir / 'beethoven_symphony_4/part_2'
     match_score(path)
-    # match_page(path, 41)
+    # match_page(path, 1)
     # count_measures(path)
