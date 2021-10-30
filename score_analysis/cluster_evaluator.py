@@ -2,7 +2,7 @@ import json
 from itertools import groupby
 
 from PIL import Image
-from operator import attrgetter
+from operator import attrgetter, itemgetter
 
 from music21 import converter
 import numpy as np
@@ -10,7 +10,7 @@ import numpy as np
 from score_analysis.measure_clusterer import MeasureImage
 from score_analysis.measure_detector import Measure
 from score_analysis.score_mapping import ScoreMappingPage
-from util.dirs import musicdata_dir, get_parts, get_score_dirs
+from util.dirs import musicdata_dir, get_score_dirs
 
 
 class ClusterMeasure(MeasureImage):
@@ -21,9 +21,10 @@ class ClusterMeasure(MeasureImage):
         self.label = -1
         self.part = part
         self.score_measures = score_measures
+        self.rhythm = None
 
     def __str__(self):
-        return 'Part: {}\tPage: {}\tSystem: {}\tBar: {}\tStaff: {}'.format(self.part, self.page, self.system, self.bar, self.staff)
+        return 'Idx: {}\tPart: {}\tPage: {}\tSystem: {}\tBar: {}\tStaff: {}'.format(self.idx, self.part, self.page, self.system, self.bar, self.staff)
 
 
 class ClusterEvaluator:
@@ -42,6 +43,9 @@ class ClusterEvaluator:
         self.score_mapping = None
         self.score = None
         self.parts = None
+
+    def get_measure(self, page, system, bar, staff):
+        return next((m for m in self.measures if m.page == page and m.system == system and m.bar == bar and m.staff == staff))
 
     def load_measures(self):
         print('Loading measures...')
@@ -111,6 +115,35 @@ class ClusterEvaluator:
         self.load_scores()
         self.load_measures()
 
+    def encode_rhythms(self):
+        ppq = 24  # pulses per quarter
+        current_time_signature = self.measures[0].score_measures[0].timeSignature
+        if current_time_signature is None:
+            current_time_signature = self.measures[0].score_measures[0].getTimeSignatures(returnDefault=False).timeSignature
+        if current_time_signature is None:
+            raise ValueError('Could not find first time signature')
+
+        for measure in self.measures:
+            if measure.score_measures[0].timeSignature is not None:
+                current_time_signature = measure.score_measures[0].timeSignature
+            rhythms = []
+            for score_measure in measure.score_measures:
+                rhythm = []
+                position = 0.0
+                for note in score_measure.notesAndRests:
+                    length = round(current_time_signature.denominator / 4 * ppq * note.quarterLength, 1)
+                    rhythm.append((position, length, not note.isRest))
+                    position += length
+                rhythms.append(rhythm)
+            combined_rhythm = rhythms[0]
+            if len(rhythms) > 1:
+                for rhythm in rhythms[1:]:
+                    if rhythm == combined_rhythm:
+                        continue
+                    combined_rhythm.extend(rhythm)
+                    combined_rhythm.sort(key=itemgetter(0, 1, 2))
+            measure.rhythm = combined_rhythm
+
 
 if __name__ == '__main__':
     # score = musicdata_dir / 'bach_brandenburg_concerto_5_part_1'
@@ -118,3 +151,4 @@ if __name__ == '__main__':
     dirs = get_score_dirs(score)
     evaluator = ClusterEvaluator(dirs)
     evaluator.load()
+    evaluator.encode_rhythms()

@@ -36,7 +36,7 @@ def get_musicdata_scores(follow_parts=True, sort_reverse=False):
 
 
 def get_parts(score):
-    return [part for part in score.iterdir() if part.is_dir() and part.name.startswith('part_')]
+    return sorted([part for part in score.iterdir() if part.is_dir() and part.name.startswith('part_')])
 
 
 def get_score_path(score):
