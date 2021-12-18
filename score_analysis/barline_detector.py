@@ -106,7 +106,7 @@ class BarlineDetector:
             small possible curves are followed as closely as possible. All vertical runs from the original skeleton list
             for which at least 80% of the pixels fall into a margin of 2 * staffline_space of the corresponding
             predicted pixel are selected as segments for the barline. These are again filtered to remove horizontally
-            overlapping segments. The remaining segments constitute the enitire Barline.
+            overlapping segments. The remaining segments constitute the entire Barline.
          7) A final filtering step is done that removes Barlines that don't span most of the vertical height of the
             system or don't fill at least 50% of pixels in between their vertical limits. Since the longest segment,
             referenced in Step 3, can be larger than the other Barlines when they are the first Barline of the system,
