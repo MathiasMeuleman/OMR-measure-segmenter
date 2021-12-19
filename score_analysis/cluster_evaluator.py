@@ -1,16 +1,18 @@
 import json
 from itertools import groupby
 
-from PIL import Image
-from operator import attrgetter, itemgetter
-
-from music21 import converter
+import math
 import numpy as np
+from PIL import Image, ImageOps
+from music21 import converter
+from operator import attrgetter, itemgetter
+from sklearn.metrics.cluster import homogeneity_completeness_v_measure
 
 from score_analysis.measure_clusterer import MeasureImage
 from score_analysis.measure_detector import Measure
 from score_analysis.score_mapping import ScoreMappingPage
-from util.dirs import musicdata_dir, get_score_dirs
+from util.dirs import get_score_dirs, get_musicdata_scores
+from util.table_generator import generate_table, TableColumn
 
 
 class ClusterMeasure(MeasureImage):
@@ -36,9 +38,11 @@ class ClusterEvaluator:
         self.medoids_path = score_dirs['medoids']
         self.score_path = score_dirs['score_path']
         self.score_mapping_path = score_dirs['score_mapping']
-        self.part_order_path = score_dirs['part_order']
+        self.part_order_path = score_dirs['parts_order']
         self.labels = None
+        self.sub_labels = None
         self.medoids = None
+        self.sub_medoids = None
         self.measures = None
         self.score_mapping = None
         self.score = None
@@ -82,6 +86,8 @@ class ClusterEvaluator:
                         score_measures = []
                         mapping_page = next((p for p in score_mapping if p.pagenumber == page_nr))
                         mapping_system = next((s for s in mapping_page.systems if s.systemnumber == system_nr))
+                        if staff > len(mapping_system.staffs):
+                            continue
                         mapping_staff = next((s for s in mapping_system.staffs if s.staffnumber == staff))
                         measure_idx = mapping_system.measurestart + bar - 1
                         staff_parts = [part for part in parts if part.id in [p.id for p in mapping_staff.parts]]
@@ -144,11 +150,104 @@ class ClusterEvaluator:
                     combined_rhythm.sort(key=itemgetter(0, 1, 2))
             measure.rhythm = combined_rhythm
 
+    def generate_measures_image(self, measures):
+        border_width = 4
+        image_width = sum(m.image.width for m in measures[0:10]) + 10 * border_width
+        image = Image.new('L', (image_width, image_width), 255)
+
+        cur_x = 0
+        cur_y = 0
+        largest_height = 0
+
+        for measure in measures:
+            measure_image = ImageOps.expand(measure.image, border=border_width)
+            if cur_x + measure_image.width >= image.width:
+                cur_x = 0
+                cur_y += largest_height
+                largest_height = 0
+            if cur_y + measure_image.height >= image.height:
+                image = ImageOps.pad(image, (image.width, image.height + image_width), color=255, centering=(0, 0))
+            image.paste(measure_image, (cur_x, cur_y))
+            cur_x += measure_image.width
+            largest_height = max(largest_height, measure_image.height)
+
+        image = image.crop((0, 0, image.width, cur_y + largest_height))
+        return image
+
+    def combine_medoids(self, clustered_measures):
+        medoids = []
+        for cluster in clustered_measures:
+            medoids.append(self.measures[self.medoids[cluster[0].label]])
+
+        medoid_rhythms = [m.rhythm for m in medoids]
+        same_medoids = []
+        for i in range(len(medoid_rhythms)):
+            if medoid_rhythms[i] in medoid_rhythms[0:i]:
+                idx = medoid_rhythms.index(medoid_rhythms[i])
+                same_medoids.append((i, idx))
+        for (source, target) in same_medoids:
+            clustered_measures[target].extend(clustered_measures[source])
+        return [clustered_measures[i] for i in range(len(clustered_measures)) if i not in [s for (s, _) in same_medoids]]
+
+    def homogeneity_completeness_v_measure(self, measures):
+        pred_labels = [m.label for m in measures]
+        true_labels = [m.true_label for m in measures]
+        homogeinity, completeness, v_measure = homogeneity_completeness_v_measure(true_labels, pred_labels)
+        return homogeinity, completeness, v_measure
+
+    def evaluate_clusters(self, combine_same_medoids=False):
+        clustered_measures = [list(v) for k, v in groupby(sorted(self.measures, key=attrgetter('label')), key=attrgetter('label'))]
+        rhythm_measures = [list(v) for k, v in groupby(sorted(self.measures, key=attrgetter('rhythm')), key=attrgetter('rhythm'))]
+        rhythm_measures.sort(key=len)
+        for i, group in enumerate(rhythm_measures):
+            for measure in group:
+                measure.true_label = i
+
+        if combine_same_medoids:
+            clustered_measures = self.combine_medoids(clustered_measures)
+
+        result_message = self.labels_path.parent.name
+        homogeneity, completeness, v_measure = self.homogeneity_completeness_v_measure([m for g in rhythm_measures for m in g])
+        result_message += '\nHomogenity: {}\tCompleteness: {}'.format(homogeneity, completeness)
+
+        total_correct_measures = 0
+        total_sub_correct_measures = 0
+        for cluster in clustered_measures:
+            label = cluster[0].label
+            medoid = self.measures[self.medoids[label]]
+            correct_measures = [m for m in cluster if m.rhythm == medoid.rhythm]
+            total_correct_measures += len(correct_measures)
+            result_message += '\n\n\t{}'.format(label)
+            result_message += '\tSame as medoid: {}/{}\t({}%)'.format(len(correct_measures), len(cluster), round(len(correct_measures) / len(cluster) * 100, 2))
+
+            sorted_measures = sorted(cluster, key=attrgetter('rhythm'))
+            grouped_measures = [list(v) for k, v in groupby(sorted_measures, key=attrgetter('rhythm'))]
+            grouped_measures.sort(key=len, reverse=True)
+
+            result_message += '\n\t\tSymbolic similarities:'
+            for group in grouped_measures:
+                result_message += '\n\t\t\t{} ({}%)\t{}\t{}'.format(len(group), round(len(group) / len(cluster) * 100, 2), 'x' if group[0].rhythm == medoid.rhythm else '', group[0].rhythm)
+
+        total_measures = len(self.measures)
+        result_message += '\ntotal avg {}/{} ({}%)'.format(total_correct_measures, total_measures, round(total_correct_measures / total_measures * 100, 2))
+        result_message += '\ntotal sub avg {}/{} ({}%)'.format(total_sub_correct_measures, total_measures, round(total_sub_correct_measures / total_measures * 100, 2))
+        with open(self.labels_path.parent / 'cluster_evaluation.txt', 'w') as f:
+            f.write(result_message)
+        return homogeneity, completeness, v_measure
+
 
 if __name__ == '__main__':
     # score = musicdata_dir / 'bach_brandenburg_concerto_5_part_1'
-    score = musicdata_dir / 'beethoven_symphony_4'
-    dirs = get_score_dirs(score)
-    evaluator = ClusterEvaluator(dirs)
-    evaluator.load()
-    evaluator.encode_rhythms()
+    # score = musicdata_dir / 'beethoven_symphony_4'
+    datapoints = []
+    columns = [TableColumn('Homogeneity', 'homogeneity', 'r'), TableColumn('Completeness', 'completeness', 'r'), TableColumn('V measure', 'v_measure', 'r')]
+    for score in get_musicdata_scores(follow_parts=False):
+        print(score.name)
+        dirs = get_score_dirs(score)
+        evaluator = ClusterEvaluator(dirs)
+        evaluator.load()
+        evaluator.encode_rhythms()
+        h, c, v = evaluator.evaluate_clusters()
+        datapoints.append({'score': score.name, 'homogeneity': round(h, 3), 'completeness': round(c, 3), 'v_measure': round(v, 3)})
+
+    print(generate_table(columns, datapoints))
