@@ -112,17 +112,14 @@ class MeasureClusterer:
         return self._get_measure_distance(measure1.profile, measure2.profile)
 
     def distance_worker(self, args):
-        i, js = args
-        dists = []
-        for j in js:
-            dist = self.get_measure_distance(self.measure_images[i], self.measure_images[j])
-            dists.append(dist)
-        return i, js, dists
+        i, j = args[0:2]
+        dist = self.get_measure_distance(self.measure_images[i], self.measure_images[j])
+        return i, j, dist
 
-    def compute_distance_matrix_pool(self, max_threads, parts=None):
+    def compute_distance_matrix_pool(self, max_threads, parts=None, mem_bench=False):
         dist_matrix_exists = self.dist_matrix_path.exists()
         parts_mode = parts is not None
-        chunksize_per_thread = 1000
+        chunksize_per_thread = 30000
         chunksize = chunksize_per_thread * max_threads
 
         print('Building jobs queue with params:\n\tthreads: {}\n\tchunksize: {}\n\tchunksize_per_thread: {}\n'.format(max_threads, chunksize, chunksize_per_thread))
@@ -132,37 +129,47 @@ class MeasureClusterer:
         else:
             dist_matrix = np.zeros((len(self.measure_images), len(self.measure_images)), dtype=np.half)
 
-        args_list = []
-        for i in range(len(self.measure_images)):
-            js = [j for j in range(i, len(self.measure_images)) if j != i and dist_matrix[i, j] == 0.0]
-            for chunk in chunks(js, max_threads):
-                args_list.append((i, chunk))
-        args_list = list(chunks(args_list, chunksize))
+        tril = np.array(np.tril_indices_from(dist_matrix, k=1), dtype=np.int32)
+        i = np.flatnonzero(dist_matrix[tril[0], tril[1]] == 0)
+        args = tril.T[i]
+        if int(len(args) / chunksize) == 0:
+            args_list = np.array([args])
+        else:
+            args_list = np.array_split(args, int(len(args) / chunksize))
+
         part_start = 0
         part_end = len(args_list)
         if parts_mode:
             part_len = int(len(args_list) / parts[1])
             part_start = (parts[0] - 1) * part_len
-            part_end = min(part_start + part_len + 1, len(args_list))
+            part_end = min(part_start + part_len, len(args_list))
         selected_args = args_list[part_start:part_end]
 
-        print('Needs to process {} batches'.format(len(args_list)))
-        if parts_mode:
-            print('Only processing part {}/{}, {} batches'.format(parts[0], parts[1], len(selected_args)))
+        if mem_bench:
+            if not dist_matrix_exists:
+                print('Mem bench:...')
+                dist_matrix[:] = np.random.rand(*dist_matrix.shape)
+                time.sleep(10)
+                print(dist_matrix[0, 0])
 
-        for idx, lst in enumerate(selected_args):
-            start = time.time()
-            pool = Pool(processes=max_threads)
-            print('Processing idx {}, length {}'.format(idx, len(lst)))
-            results = pool.map(self.distance_worker, lst)
-            for (i, j, dist) in results:
-                dist_matrix[i, j] = dist
-                dist_matrix[j, i] = dist
-            np.save(self.dist_matrix_save_path, dist_matrix)
-            pool.close()
-            pool.join()
-            end = time.time()
-            print('\tDone in {}s'.format(round(end - start)))
+        else:
+            print('Needs to process {} batches'.format(len(args_list)))
+            if parts_mode:
+                print('Only processing part {}/{}, {} batches'.format(parts[0], parts[1], len(selected_args)))
+
+            for idx, lst in enumerate(selected_args):
+                start = time.time()
+                pool = Pool(processes=max_threads)
+                print('Processing idx {}, length {}'.format(idx, len(lst)))
+                results = pool.map(self.distance_worker, lst)
+                for (i, j, dist) in results:
+                    dist_matrix[i, j] = dist
+                    dist_matrix[j, i] = dist
+                np.save(self.dist_matrix_save_path, dist_matrix)
+                pool.close()
+                pool.join()
+                end = time.time()
+                print('\tDone in {}s'.format(round(end - start)))
 
         return dist_matrix
 
@@ -173,11 +180,15 @@ This script is optimized for the high performance compute clusters on which the 
 if __name__ == '__main__':
     part = Path(sys.argv[1])
     part_of_total = None
+    mem_bench = False
     if len(sys.argv) >= 3:
         parts_str = sys.argv[2]
-        if '/' not in parts_str:
-            raise ValueError('Could not parse parts string input')
-        part_of_total = (int(parts_str.split('/')[0]), int(parts_str.split('/')[1]))
+        if '/' in parts_str:
+            part_of_total = (int(parts_str.split('/')[0]), int(parts_str.split('/')[1]))
+        elif parts_str == 'mem-bench':
+            mem_bench = True
+        else:
+            raise ValueError('Do not know what to do with arg "{}"'.format(parts_str))
     print('Calculating dist matrix for {}'.format(part))
     start = time.time()
     parts = [p for p in part.iterdir() if p.is_dir() and p.stem.startswith('part_')]
@@ -191,11 +202,12 @@ if __name__ == '__main__':
     save_path = dist_matrix_path
     if part_of_total is not None:
         save_path = dist_matrix_path.parent / 'dist_matrix_{}.{}.npy'.format(part_of_total[0], part_of_total[1])
-    threads = int(os.environ['SLURM_CPUS_PER_TASK'])
+    threads = int(os.environ['SLURM_CPUS_PER_TASK']) if 'SLURM_CPUS_PER_TASK' in os.environ else 4
 
     clusterer = MeasureClusterer(measures_path, images_path, dist_matrix_path, save_path)
     clusterer.load_measure_images()
-    dist_matrix = clusterer.compute_distance_matrix_pool(max_threads=threads, parts=part_of_total)
-    np.save(save_path, dist_matrix)
+    dist_matrix = clusterer.compute_distance_matrix_pool(max_threads=threads, parts=part_of_total, mem_bench=mem_bench)
+    if not mem_bench:
+        np.save(save_path, dist_matrix)
     end = time.time()
     print('\tDone in {}'.format(end - start))

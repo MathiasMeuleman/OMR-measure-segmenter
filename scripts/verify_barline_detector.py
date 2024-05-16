@@ -2,7 +2,7 @@ import json
 import string
 
 from score_analysis.barline_detector import System
-from util.dirs import musicdata_dir
+from util.dirs import musicdata_dir, get_musicdata_scores
 
 composer_name_map = {
     'bach': 'Bach, J.S.',
@@ -28,19 +28,9 @@ def generate_table_footer():
     return '\\end{tabular}\n\\caption{}\n\\label{}\n\\end{table}'
 
 
-def generate_table_row(dalitz_result, meuleman_result):
-    score = dalitz_result['score']
-    name_parts = [s.capitalize() for s in score.split('_')[1:]]
-    if name_parts[0] == 'Symphony':
-        name_parts = [name_parts[0], 'No.', name_parts[1]]
-    name = ' '.join(name_parts)
-    composer = composer_name_map[score.split('_')[0]]
-    return '{}\t&\t{}\t&\t{}\t&\t{}\t\\\\\n'.format(name, composer, round(dalitz_result['avg_page_accuracy'], 4), round(meuleman_result['avg_page_accuracy'], 4))
-
-
 def generate_table_results():
     table = generate_table_header()
-    for score in sorted([score for score in musicdata_dir.iterdir() if score.is_dir()]):
+    for score in get_musicdata_scores(follow_parts=False):
         score_dir = musicdata_dir / score
         results = verify_musicdata_score(score_dir)
         name_parts = [s.capitalize() for s in score.name.split('_')[1:]]
@@ -53,20 +43,9 @@ def generate_table_results():
     return table
 
 
-def generate_table_all_combined_results():
-    table = generate_table_header(single_acc_only=False)
-    for score in sorted([score for score in musicdata_dir.iterdir() if score.is_dir()]):
-        score_dir = musicdata_dir / score
-        dalitz_results = verify_musicdata_score(score_dir, 'Dalitz')
-        meuleman_results = verify_musicdata_score(score_dir, 'Meuleman')
-        table += generate_table_row(dalitz_results, meuleman_results)
-    table += generate_table_footer()
-    return table
-
-
-def parse_category_errors(staff_finder):
+def parse_category_errors():
     categories = []
-    with open(musicdata_dir / ('staff_finder_errors_' + staff_finder + '.txt')) as f:
+    with open(musicdata_dir / ('barline_detector_errors.txt')) as f:
         file_str = f.read()
     for category_str in file_str.split('\n\n'):
         score_strs = category_str.split('\n')[1:]
@@ -76,12 +55,11 @@ def parse_category_errors(staff_finder):
 
 
 def generate_category_table():
-    table = '\\begin{table}[]\n\\begin{tabular}{lrr}\n'
-    table += '\\textbf{Category}\t&\t\\textbf{Dalitz count}\t&\t\\textbf{Meuleman count}\t\\\\\n'
-    dalitz_errors = parse_category_errors('Dalitz')
-    meuleman_errors = parse_category_errors('Meuleman')
-    for i in range(len(dalitz_errors)):
-        table += '{}\t&\t{}\t&\t{}\t\\\\\n'.format(string.ascii_uppercase[i], dalitz_errors[i], meuleman_errors[i])
+    table = '\\begin{table}[]\n\\begin{tabular}{lr}\n'
+    table += '\\textbf{Category}\t&\t\\textbf{Errors}\t\\\\\n'
+    errors = parse_category_errors()
+    for i in range(len(errors)):
+        table += '{}\t&\t{}\t\\\\\n'.format(string.ascii_uppercase[i], errors[i])
     table += generate_table_footer()
     return table
 
@@ -139,6 +117,10 @@ def verify_musicdata_score(score_dir):
     for i, path in enumerate(staffs_paths):
         with open(path) as f:
             systems = [System.from_json(json_data) for json_data in json.load(f)['systems']]
+        """
+        Hacking away the systems that only have 1 barline (due to noise). This adaptation has been made in the 
+        barline detector as well, but the results have not yet been updated, so these are removed here for now.
+        """
         misaligned_page_systems = []
         for system in systems:
             if len(system.barlines) == 1:
@@ -146,6 +128,7 @@ def verify_musicdata_score(score_dir):
         misaligned_systems.append({'page': i + 1, 'misaligned_systems': len(misaligned_page_systems)})
         for system in misaligned_page_systems:
             systems.remove(system)
+
         if len(systems) != len(annotations[i]):
             raise AssertionError('Page {}: Found {} systems, expected {}'.format(i + i, len(systems), len(annotations[i])))
         for j, system in enumerate(systems):
@@ -169,11 +152,8 @@ def verify_musicdata_score(score_dir):
 
 
 def main():
-    # print(generate_table_results('Dalitz'))
-    # print(generate_table_all_combined_results())
-    # print(generate_category_table())
-    for score in sorted([score for score in musicdata_dir.iterdir() if score.is_dir()]):
-        print_results(verify_musicdata_score(score))
+    # print(generate_table_results())
+    print(generate_category_table())
 
 
 if __name__ == '__main__':

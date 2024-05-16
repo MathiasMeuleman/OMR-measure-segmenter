@@ -1,11 +1,12 @@
 import json
+from pathlib import Path
 
 from PIL import Image
 from tqdm import tqdm
 
 from score_analysis.score_image import ScoreImage
 from score_analysis.stafffinder_meuleman import StaffFinder_meuleman
-from util.dirs import data_dir
+from util.dirs import data_dir, musicdata_dir
 from util.score_draw import ScoreDraw
 
 
@@ -17,7 +18,7 @@ class StaffDetector:
 
     def detect_staffs(self):
         staff_finder = StaffFinder_meuleman(self.image)
-        staff_finder.find_staves(debug=0)
+        staff_finder.find_staves(debug=2)
         staff_finder_average = staff_finder.get_average()
         staffs = []
         for staff in staff_finder_average:
@@ -92,13 +93,15 @@ class Staff:
 
 
 if __name__ == '__main__':
-    staff_path = data_dir / 'sample' / 'staffs'
-    staff_path.mkdir(parents=True, exist_ok=True)
-    overlay_path = data_dir / 'sample' / 'staff_overlays' / 'pages'
-    overlay_path.mkdir(parents=True, exist_ok=True)
-    for image_path in tqdm((data_dir / 'sample' / 'pages').iterdir()):
-        image = Image.open(image_path)
-        staffs = StaffDetector(image, output_path=staff_path / (image_path.stem + '.json')).detect_staffs()
-        score_draw = ScoreDraw(image)
-        staff_image = score_draw.draw_staffs(staffs)
-        staff_image.save(overlay_path / image_path.name)
+    # staff_path = data_dir / 'sample' / 'staffs'
+    # staff_path.mkdir(parents=True, exist_ok=True)
+    # overlay_path = data_dir / 'sample' / 'staff_overlays' / 'pages'
+    # overlay_path.mkdir(parents=True, exist_ok=True)
+    # for image_path in tqdm((data_dir / 'sample' / 'pages').iterdir()):
+    #     image = Image.open(image_path)
+    #     staffs = StaffDetector(image, output_path=staff_path / (image_path.stem + '.json')).detect_staffs()
+    #     score_draw = ScoreDraw(image)
+    #     staff_image = score_draw.draw_staffs(staffs)
+    #     staff_image.save(overlay_path / image_path.name)
+    image = Image.open(musicdata_dir / 'tchaikovsky_ouverture_1812' / 'pages' / 'page_23.png')
+    staffs = StaffDetector(image).detect_staffs()

@@ -200,15 +200,25 @@ class ScoreMapper:
         self.annotations = annotations
 
     def load_visibile_parts_hint(self):
+        """
+        Format for visible parts hint is either [start]-[end]:id1,id2,id3 or [page].[system]:id1,id2,id3
+        """
         visible_parts_hint = [[[] for _ in page] for page in self.annotations]
         visibible_parts_hint_path = self.directory / 'visible_parts_hint.txt'
         if visibible_parts_hint_path.is_file():
             with open(visibible_parts_hint_path) as file:
                 hints = file.read().splitlines()
             for hint in hints:
-                page, system = [int(x) for x in hint.split(':')[0].split('.')[0:2]]
-                ids = hint.split(':')[1].split(',')
-                visible_parts_hint[page - 1][system - 1] = ids
+                page_str, part_str = hint.split(':')[0:2]
+                ids = [s.replace(';', ',') for s in part_str.split(',')]
+                if '-' in page_str:
+                    start, end = [int(x) for x in page_str.split('-')[0:2]]
+                    for page in range(start, end + 1):
+                        for system in range(len(visible_parts_hint[page - 1])):
+                            visible_parts_hint[page - 1][system] = ids
+                else:
+                    page, system = [int(x) for x in hint.split(':')[0].split('.')[0:2]]
+                    visible_parts_hint[page - 1][system - 1] = ids
         self.visible_parts_hint = visible_parts_hint
 
     def load_score(self):
@@ -315,19 +325,6 @@ class ScoreMapper:
                 matches.append(self.generate_annotated_part_group(group, staff))
                 staff += 1
 
-            # (empty_part_groups
-            #  if self.grouped_parts_is_empty(group, start, start + measure_count)
-            #  else non_empty_part_groups
-            #  ).append(group)
-        # if len(non_empty_part_groups) > part_count:
-        #     self.logger.warning([[part.id for part in part_group] for part_group in non_empty_part_groups])
-        #     raise AssertionError('Found {} non-empty voices in system expected {} at most, at page: {}, system: {}, current_measure: {}'
-        #                          .format(len(non_empty_part_groups), part_count, page_nr, system_nr, start))
-        # parts = set([p.id for page in self.score_mapping for system in page.systems for staff in system.staffs for p in staff.parts])
-        # if len(non_empty_part_groups) < part_count:
-        #     self.logger.info('Found {} empty staffs at page {}, system {}'.format(part_count - len(non_empty_part_groups), page_nr, system_nr))
-        # matches = [self.generate_annotated_part_group(grouped_part, ) for grouped_part in non_empty_part_groups]
-        # matches.extend([{'parts': None} for _ in range(part_count - len(non_empty_part_groups))])
         return matches
 
     def match_page(self, page_number):
@@ -418,15 +415,6 @@ class ScoreMapper:
         }
 
 
-def match_score(path):
-    source = ScoreMapper(path, log_to_file=True)
-    source.init()
-    # source.list_parts()
-    # source.list_parts(ids_only=True)
-    source.match_score()
-    # source.get_matched_score()
-
-
 def match_page(path, page):
     source = ScoreMapper(path)
     source.init()
@@ -441,13 +429,6 @@ def count_measures(path):
 if __name__ == '__main__':
     part_directories = [
         'bach_brandenburg_concerto_5_part_1',
-        'brahms_symphony_3',
-        'bruckner_symphony_5',
-        'bruckner_symphony_9',
-        'holst_the_planets',
-        'mozart_symphony_41',
-        'tchaikovsky_ouverture_1812/edition_1',
-        'temp'
         'beethoven_symphony_1/part_1',
         'beethoven_symphony_1/part_2',
         'beethoven_symphony_1/part_3',
@@ -483,11 +464,17 @@ if __name__ == '__main__':
         'beethoven_symphony_9/part_2',
         'beethoven_symphony_9/part_3',
         'beethoven_symphony_9/part_4',
+        'brahms_symphony_3',
+        'bruckner_symphony_5',
+        'bruckner_symphony_9',
+        'holst_the_planets',
         'mahler_symphony_4',
+        'mozart_symphony_41',
+        'tchaikovsky_ouverture_1812',
     ]
 
-    # path = musicdata_dir / part_directories[0]
-    path = musicdata_dir / 'beethoven_symphony_4/part_2'
-    match_score(path)
-    # match_page(path, 1)
-    # count_measures(path)
+    for part in part_directories:
+        path = musicdata_dir / part
+        source = ScoreMapper(path, log_to_file=True)
+        print(part)
+        print(source.get_measure_count())

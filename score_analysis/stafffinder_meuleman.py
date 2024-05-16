@@ -198,6 +198,10 @@ class StaffFinder_meuleman():
             n.skeleton = line
             segments.append(n)
 
+        if debug > 1:
+            draw_skeleton(self.image, segments, 'step_1_skeleton')
+
+
         # --------------------------------------------------------
         #
         # Step 2: Create vertical connections
@@ -767,6 +771,7 @@ class StaffFinder_meuleman():
         if debug > 1:
             draw_group_segments(self.image, groups, 'step_9b_segments')
             draw_groups(self.image, groups, 'step_9b')
+            draw_group_segments(self.image, groups, 'step_9b_segments_original', with_original=True)
 
         # --------------------------------------------------------
         #
@@ -968,6 +973,24 @@ class StaffFinder_meuleman():
 
 # ----------------------------------------------------------------
 
+colors = ['red', 'orange', 'green', 'blue', 'purple']
+# colors = [[255, 0, 0], [255, 165, 0], [0, 128, 0], [0, 0, 255], [128, 0, 128]]
+
+
+def draw_skeleton(original, segments, name):
+    rgb = Image.new('RGB', original.size, 'white')
+    draw = ImageDraw.Draw(rgb)
+    color = (0, 0, 0)
+
+    for seg in segments:
+        for j in range(len(seg.skeleton[1])):
+            x = seg.skeleton[0] + j
+            points = [(x, seg.skeleton[1][j] + k) for k in [-1, 0, 1]]
+            draw.point(points, color)
+    del draw
+    rgb.save('meuleman_{}.png'.format(name))
+
+
 def draw_segments(original, segments, name):
     rgb = original.copy().convert('RGB')
     color = (255, 125, 0)
@@ -979,22 +1002,26 @@ def draw_segments(original, segments, name):
         #                  150 + (201 * (seg.label + 2)) % 106)
         draw.rectangle(((seg.col_start, seg.row_start), (seg.col_end, seg.row_end)), fill=color)
     del draw
-    rgb.save('{}.png'.format(name))
+    rgb.save('meuleman_{}.png'.format(name))
 
 
-def draw_group_segments(original, groups, name):
-    rgb = original.copy().convert('RGB')
+def draw_group_segments(original, groups, name, with_original=False):
+    if with_original:
+        rgb = original.copy().convert('RGB')
+    else:
+        rgb = Image.new('RGB', original.size, 'white')
     draw = ImageDraw.Draw(rgb)
 
-    for g in groups:
-        color = (150 + (31 * g.label) % 106,
-                 150 + (111 * (g.label + 1)) % 106,
-                 150 + (201 * (g.label + 2)) % 106)
+    for i, g in enumerate(groups):
+        color = colors[i % len(colors)]
 
         for seg in g.segments:
-            draw.rectangle(((seg.col_start - 5, seg.row_start - 5), (seg.col_end + 5, seg.row_end + 5)), fill=color)
+            for j in range(len(seg.skeleton[1])):
+                x = seg.skeleton[0] + j
+                points = [(x, seg.skeleton[1][j] + k) for k in [-1, 0, 1]]
+                draw.point(points, color)
     del draw
-    rgb.save('{}.png'.format(name))
+    rgb.save('meuleman_{}.png'.format(name))
 
 
 def draw_groups(original, groups, name):
@@ -1012,7 +1039,7 @@ def draw_groups(original, groups, name):
             row_end = row_end + 10
         draw.rectangle(((g.col_start, row_start), (g.col_end, row_end)), fill=color)
     del draw
-    rgb.save('{}.png'.format(name))
+    rgb.save('meuleman_{}.png'.format(name))
 
 
 class Point:

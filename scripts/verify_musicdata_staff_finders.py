@@ -76,7 +76,7 @@ def parse_category_errors(staff_finder):
 
 def generate_category_table():
     table = '\\begin{table}[]\n\\begin{tabular}{lrr}\n'
-    table += '\\textbf{Category}\t&\t\\textbf{Dalitz count}\t&\t\\textbf{Meuleman count}\t\\\\\n'
+    table += '\\textbf{Category}\t&\t\\textbf{Dalitz errors}\t&\t\\textbf{Meuleman errors}\t\\\\\n'
     dalitz_errors = parse_category_errors('Dalitz')
     meuleman_errors = parse_category_errors('Meuleman')
     for i in range(len(dalitz_errors)):

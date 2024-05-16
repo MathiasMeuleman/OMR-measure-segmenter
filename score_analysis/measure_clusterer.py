@@ -1,15 +1,19 @@
 import json
+import re
+import shutil
 import time
 from itertools import groupby, product
+import matplotlib.pyplot as plt
 from multiprocessing import Pool
 from pathlib import Path
 
 import numpy as np
 from PIL import Image, ImageDraw, ImageOps
 from fastdtw import fastdtw
-from kmedoids import fasterpam
+from kneed import KneeLocator
 from operator import attrgetter
-from sklearn.metrics import silhouette_score
+from sklearn_extra.cluster import KMedoids
+from kmedoids import fastpam1, fasterpam
 from tqdm import tqdm
 
 from score_analysis.measure_detector import Measure
@@ -65,11 +69,16 @@ class MeasureClusterer:
             self.measures_path = [Path(measures_path)]
             self.images_path = [Path(images_path)]
         self.dist_matrix_path = Path(dist_matrix_path)
+        self.cluster_save_dir = None
         self.measure_images = None
         self.dist_matrix = None
         self.clusters = None
         self.labels = None
         self.medoids = None
+        self.ks = []
+        self.all_labels = []
+        self.all_medoids = []
+        self.all_inertias = []
 
     def load_measure_images(self, store_images=True):
         print('Loading measures...')
@@ -183,33 +192,80 @@ class MeasureClusterer:
             self.dist_matrix = np.load(self.dist_matrix_path)
         self.normalize_dist_matrix(normalization)
 
-    def cluster(self):
+    class Clustering:
+        def __init__(self, medoids, labels, loss):
+            self.medoids = medoids
+            self.labels = labels
+            self.loss = loss
+
+    def cluster(self, method='fastpam', start=2, end=50, save_dir=None):
         print('Clustering based on distance matrix...')
-        silhouette_scores = []
+        self.ks = list(range(start, end + 1))
         clusterings = []
         float_dist_matrix = self.dist_matrix.astype(np.float32)
-        for k in tqdm(range(11, 13)):
-            c = fasterpam(float_dist_matrix, k)
-            score = silhouette_score(float_dist_matrix, c.labels, metric='precomputed')
-            clusterings.append(c)
-            silhouette_scores.append(score)
-        best_score_idx = max(range(len(silhouette_scores)), key=silhouette_scores.__getitem__)
-        c = clusterings[best_score_idx]
+        for k in tqdm(self.ks):
+            if method == 'pam':
+                c = KMedoids(n_clusters=k, method='pam', metric='precomputed').fit(float_dist_matrix)
+                clusterings.append(self.Clustering(c.medoid_indices_, c.labels_, c.inertia_))
+            elif method == 'fastpam':
+                c = fastpam1(float_dist_matrix, medoids=k)
+                clusterings.append(self.Clustering(c.medoids, c.labels, c.loss))
+            elif method == 'fasterpam':
+                c = fasterpam(float_dist_matrix, medoids=k)
+                clusterings.append(self.Clustering(c.medoids, c.labels, c.loss))
+            else:
+                raise ValueError('Method {} is not supported'.format(method))
+        if save_dir is not None:
+            save_dir = Path(save_dir)
+            if save_dir.exists():
+                for i in range(len(self.ks)):
+                    c = clusterings[i]
+                    np.save(save_dir / '{}_cluster_labels_{}.npy'.format(method, self.ks[i]), c.labels)
+                    np.save(save_dir / '{}_cluster_medoids_{}.npy'.format(method, self.ks[i]), c.medoids)
+                    np.save(save_dir / '{}_cluster_inertia_{}.npy'.format(method, self.ks[i]), c.loss)
+        kneedle = KneeLocator(self.ks, [c.loss for c in clusterings], curve='convex', direction='decreasing')
+        plt.style.use('ggplot')
+        kneedle.plot_knee()
+        plt.show()
+        selected_clustering_idx = self.ks.index(kneedle.knee)
+        print('Selected {} clusters'.format(self.ks[selected_clustering_idx]))
+        c = clusterings[selected_clustering_idx]
         for i in range(len(self.measure_images)):
             self.measure_images[i].label = c.labels[i]
         self.labels = c.labels
         self.medoids = c.medoids
         measures = sorted(self.measure_images, key=attrgetter('label'))
-        clustered_measures = sorted([list(v) for k, v in groupby(measures, key=attrgetter('label'))], key=lambda l: len(l), reverse=True)
+        clustered_measures = [list(v) for k, v in groupby(measures, key=attrgetter('label'))]
         self.clusters = [MeasureCluster(measures, measures[0].label, c.medoids[measures[0].label]) for measures in clustered_measures]
 
-    def save_clusters(self, save_dir):
-        np.save(Path(save_dir) / 'cluster_labels.npy', self.labels)
-        np.save(Path(save_dir) / 'cluster_medoids.npy', self.medoids)
+    def load_clusters(self, save_dir, method='fastpam'):
+        self.cluster_save_dir = Path(save_dir)
+        self.ks = sorted([int(re.search(r'\d+', s.stem).group()) for s in self.cluster_save_dir.glob('{}_cluster_labels_*'.format(method))])
+        self.ks = [k for k in self.ks if k <= 100 or k % 10 == 0]
+        for k in self.ks:
+            self.all_labels.append(np.load(self.cluster_save_dir / '{}_cluster_labels_{}.npy'.format(method, k)).tolist())
+            self.all_medoids.append(np.load(self.cluster_save_dir / '{}_cluster_medoids_{}.npy'.format(method, k)).tolist())
+            self.all_inertias.append(float(np.load(self.cluster_save_dir / '{}_cluster_inertia_{}.npy'.format(method, k))))
 
-    def load_clusters(self, save_dir):
-        self.labels = np.load(Path(save_dir) / 'cluster_labels.npy').tolist()
-        self.medoids = np.load(Path(save_dir) / 'cluster_medoids.npy').tolist()
+    def find_optimal_clustering(self, method='fastpam'):
+        kneedle = KneeLocator(self.ks, self.all_inertias, curve='convex', direction='decreasing')
+        plt.style.use('ggplot')
+        kneedle.plot_knee()
+        left, right = plt.gca().get_xlim()
+        bottom, top = plt.gca().get_ylim()
+        plt.title(str(self.dist_matrix_path.parent.name))
+        plt.text(kneedle.elbow + (right - left) * 0.01, bottom + (top - bottom) * 0.01, 'Elbow point at: {}'.format(kneedle.elbow))
+        plt.show()
+        idx = self.ks.index(kneedle.elbow)
+        self.labels = self.all_labels[idx]
+        self.medoids = self.all_medoids[idx]
+        for i in range(len(self.measure_images)):
+            self.measure_images[i].label = self.labels[i]
+        measures = sorted(self.measure_images, key=attrgetter('label'))
+        clustered_measures = [list(v) for k, v in groupby(measures, key=attrgetter('label'))]
+        self.clusters = [MeasureCluster(measures, measures[0].label, self.medoids[measures[0].label]) for measures in clustered_measures]
+        shutil.copy(self.cluster_save_dir / '{}_cluster_medoids_{}.npy'.format(method, kneedle.elbow), self.cluster_save_dir.parent / 'cluster_medoids.npy')
+        shutil.copy(self.cluster_save_dir / '{}_cluster_labels_{}.npy'.format(method, kneedle.elbow), self.cluster_save_dir.parent / 'cluster_labels.npy')
 
     def _get_profile_image(self, measure):
         profile_img = np.ones((measure.image.height, measure.image.width)) * 255
@@ -217,66 +273,67 @@ class MeasureClusterer:
             profile_img[(profile_img.shape[0] - 1 - measure.profile[i]):, i] = 0
         return Image.fromarray(profile_img)
 
-    def generate_cluster_images(self, cluster_idx, print_position=None, print_distances=False):
+    def generate_medoids_image(self):
+        row_size = 7
+        label_heigth = 30
+        border_size = 4
+        medoids = [self.measure_images[c.medoid].image for c in self.clusters]
+        rows = list(chunks(medoids, row_size))
+        row_heights = []
+        row_widths = []
+        for row in rows:
+            row_heights.append(max([m.height for m in row]) + label_heigth)
+            row_widths.append(sum([m.width + 2 * border_size for m in row]))
+        image = Image.new('L', (max(row_widths), sum(row_heights)), 255)
+        draw = ImageDraw.Draw(image)
+        for i, row in enumerate(rows):
+            top = sum(row_heights[0:i]) + i * label_heigth
+            for j, medoid in enumerate(row):
+                left = sum([m.width for m in row[0:j]]) + j * 2 * border_size
+                image.paste(medoid, (left, top))
+                draw.text((int(left + medoid.width // 2), top + medoid.height + border_size), str(i * row_size + j), anchor='ms')
+        return image
+
+    def generate_cluster_images(self, cluster_idx, approx=10, print_position=None, print_distances=False):
+        Image.MAX_IMAGE_PIXELS = None  # Disable max size check
         cluster = self.clusters[cluster_idx]
         measures = cluster.measures
         border_width = 4
-        row_size = 10
-        avg_width = sum([m.image.width for m in measures]) // len(measures)
-        rows = list(chunks(measures, row_size))
-        image_width = avg_width * row_size + border_width * 2 * row_size
-        max_height = int(1.41 * image_width)  # A4 ratios
+        image_width = sum(m.image.width for m in measures[0:approx]) + approx * border_width
 
-        image_chunks = []
-        image_chunk_heights = []
+        image = Image.new('L', (image_width, image_width), 255)
+        medoid_img = next(m for m in self.measure_images if m.idx == cluster.medoid).image
+        image.paste(medoid_img, (int(image_width / 2 - medoid_img.width / 2), 0))
+        cur_x = 0
+        cur_y = medoid_img.height
+        largest_height = 0
 
-        chunk_rows = []
-        chunk_row_heights = []
+        for measure in measures:
+            measure_image = ImageOps.expand(measure.image, border=border_width)
+            if cur_x + measure_image.width >= image.width:
+                cur_x = 0
+                cur_y += largest_height
+                largest_height = 0
+            if cur_y + measure_image.height >= image.height:
+                image = ImageOps.pad(image, (image.width, image.height + image_width), color=255, centering=(0, 0))
+            image.paste(measure_image, (cur_x, cur_y))
+            cur_x += measure_image.width
+            largest_height = max(largest_height, measure_image.height)
 
-        for row in rows:
-            row_height = max([int(min(m.image.width / avg_width, 1) * m.image.height) for m in row])
-            if max_height > 0 and sum(chunk_row_heights) + row_height > max_height:
-                image_chunks.append(chunk_rows)
-                image_chunk_heights.append(chunk_row_heights)
-                chunk_rows = []
-                chunk_row_heights = []
-            chunk_rows.append(row)
-            chunk_row_heights.append(row_height)
-        image_chunks.append(chunk_rows)
-        image_chunk_heights.append(chunk_row_heights)
+            draw = ImageDraw.Draw(image)
+            draw_top = cur_y + 2 * border_width
+            if print_position is not None:
+                if print_position == 'idx':
+                    text = str(measure.idx)
+                else:
+                    text = '{}.{}.{}.{}'.format(measure.page, measure.system, measure.bar, measure.staff)
+                draw.text((cur_x - measure_image.width + 2 * border_width, draw_top), text)
+            if print_distances:
+                text = str(round(self.dist_matrix[measure.idx, cluster.medoid], 2))
+                draw.text((cur_x - 2 * border_width, draw_top), text, anchor='rt')
+            del draw
 
-        medoid_img = self.measure_images[cluster.medoid].image
-        header_height = medoid_img.height + border_width
-        header_image = Image.new('L', (image_width, header_height), 255)
-        header_image.paste(medoid_img, (int(image_width / 2 - medoid_img.width / 2), 0))
-
-        images = []
-        for rows, row_heights in zip(image_chunks, image_chunk_heights):
-            image = ImageOps.pad(header_image.copy(), (image_width, sum(row_heights) + border_width * 2 * len(row_heights) + header_height), color=255, centering=(0, 0))
-            for i, row in enumerate(rows):
-                top = sum(row_heights[0:i]) + border_width * 2 * i + header_height
-                for j, measure in enumerate(row):
-                    resize = min(measure.image.width / avg_width, 1)
-                    measure_img = ImageOps.expand(
-                        measure.image.resize((int(measure.image.width * resize), int(measure.image.height * resize))),
-                        border=border_width, fill='red')
-                    position = (j * avg_width + border_width * 2 * j, top)
-                    image.paste(measure_img, position)
-                    draw = ImageDraw.Draw(image)
-                    draw.text((int(image_width / 2 - medoid_img.width / 2 - 2 * border_width), 2 * border_width), str(cluster.medoid), anchor='rt')
-                    draw_top = position[1] + 2 * border_width
-                    if print_position is not None:
-                        if print_position == 'idx':
-                            text = str(measure.idx)
-                        else:
-                            text = '{}.{}.{}.{}'.format(measure.page, measure.system, measure.bar, measure.staff)
-                        draw.text((position[0] + 2 * border_width, draw_top), text)
-                    if print_distances:
-                        text = str(round(self.dist_matrix[measure.idx, cluster.medoid], 2))
-                        draw.text((position[0] + measure_img.width - 2 * border_width, draw_top), text, anchor='rt')
-                    del draw
-            images.append(image)
-        return images
+        return image.crop((0, 0, image.width, cur_y + largest_height))
 
     def compare_measures_visual(self, idx1, idx2):
         measure1 = self.measure_images[idx1]
@@ -323,26 +380,54 @@ class MeasureClusterer:
         image.show()
 
 if __name__ == '__main__':
-    score = musicdata_dir / 'bach_brandenburg_concerto_5_part_1'
-    # score = musicdata_dir / 'beethoven_symphony_4'
+    score = musicdata_dir / 'beethoven_symphony_5'
     measures_path = score / 'measures'
     images_path = score / 'measure_images'
     cluster_images = score / 'cluster_images'
+    cluster_save = score / 'clusters'
     cluster_images.mkdir(exist_ok=True)
+    cluster_save.mkdir(exist_ok=True)
     parts = get_parts(score)
     if len(parts) > 0:
         measures_path = [score / part.name / 'measures' for part in parts]
         images_path = [score / part.name / 'measure_images' for part in parts]
     dist_matrix_path = score / 'dist_matrix.npy'
     clusterer = MeasureClusterer(measures_path, images_path, dist_matrix_path)
-    # Set store_images to false when calculating dist_matrix for memory efficiency
     clusterer.load_measure_images(store_images=True)
-    # clusterer.compare_measures([(5077, 5099), (5098, 5099), (5133, 5136)])
+    clusterer.load_clusters(save_dir=cluster_save)
+    clusterer.find_optimal_clustering()
+    for i in range(len(clusterer.clusters))[18:19]:
+        image = clusterer.generate_cluster_images(i, print_position='idx', print_distances=False, approx=35)
+        image.save(cluster_images / 'cluster_{}.png'.format(i))
 
-    clusterer.get_distance_matrix(normalization='smallest')
-    clusterer.cluster()
-    clusterer.save_clusters(score)
-    for i in range(len(clusterer.clusters)):
-        images = clusterer.generate_cluster_images(i, print_position='idx', print_distances=True)
-        for j, image in enumerate(images):
-            image.save(cluster_images / 'cluster_{}.{}.png'.format(i, j))
+    # for score in get_musicdata_scores(follow_parts=False):
+    #     print(score)
+    #     measures_path = score / 'measures'
+    #     images_path = score / 'measure_images'
+    #     cluster_images = score / 'cluster_images'
+    #     cluster_save = score / 'clusters'
+    #     cluster_images.mkdir(exist_ok=True)
+    #     cluster_save.mkdir(exist_ok=True)
+    #     parts = get_parts(score)
+    #     if len(parts) > 0:
+    #         measures_path = [score / part.name / 'measures' for part in parts]
+    #         images_path = [score / part.name / 'measure_images' for part in parts]
+    #     dist_matrix_path = score / 'dist_matrix.npy'
+    #     clusterer = MeasureClusterer(measures_path, images_path, dist_matrix_path)
+    #     clusterer.load_measure_images(store_images=True)
+    #     clusterer.load_clusters(save_dir=cluster_save)
+    #     clusterer.find_optimal_clustering()
+    #     for f in cluster_images.glob('*'):
+    #         f.unlink()
+    #     for i in range(len(clusterer.clusters)):
+    #         image = clusterer.generate_cluster_images(i, print_position='idx', print_distances=False)
+    #         image.save(cluster_images / 'cluster_{}.png'.format(i))
+    #     clusterer.generate_medoids_image().save(cluster_images / 'medoids.png')
+
+    # Set store_images to false when calculating dist_matrix for memory efficiency
+    # clusterer.load_measure_images(store_images=True)
+    # clusterer.get_distance_matrix(normalization='smallest')
+    # clusterer.compare_measures_visual(87, 16899).show()
+
+    # clusterer.cluster(method='fastpam', save_dir=cluster_save)
+    # clusterer.save_clusters(score)

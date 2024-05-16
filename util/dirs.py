@@ -55,14 +55,14 @@ def get_score_dirs(score):
         dirs['measures'] = [score / part.name / measures_dir for part in parts]
         dirs['measure_images'] = [score / part.name / measure_images_dir for part in parts]
         dirs['score_mapping'] = [score / part.name / score_mapping_path for part in parts]
-        dirs['part_order'] = [score / part.name / part_order_path for part in parts]
+        dirs['parts_order'] = [score / part.name / part_order_path for part in parts]
         dirs['score_path'] = [get_score_path(part) for part in parts]
     else:
         dirs['measures'] = [score / measures_dir]
         dirs['measure_images'] = [score / measure_images_dir]
         dirs['score_mapping'] = [score / score_mapping_path]
         dirs['parts_order'] = [score / part_order_path]
-        dirs['score_path'] = get_score_path(score)
+        dirs['score_path'] = [get_score_path(score)]
     dirs['labels'] = score / labels_path
     dirs['medoids'] = score / medoids_path
     return dirs

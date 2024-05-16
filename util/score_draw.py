@@ -29,7 +29,7 @@ class ScoreDraw:
                 color = ImageColor.getrgb(self.colors[i % len(self.colors)])
                 for segment in barline.segments:
                     for row in range(len(segment.x_values)):
-                        barline_img[segment.y + row, segment.x_values[row] - 2:segment.x_values[row] + 2] = color
+                        barline_img[segment.y + row, segment.x_values[row] - 4:segment.x_values[row] + 4] = color
         return Image.fromarray(barline_img)
 
     def draw_measures(self, measures):
@@ -38,5 +38,14 @@ class ScoreDraw:
         for measure in measures:
             color = ImageColor.getrgb(self.colors[measure.system % len(self.colors)])
             draw.rectangle(((measure.start, measure.top), (measure.end, measure.bottom)), outline=color, width=5)
+        del draw
+        return image
+
+    def draw_measures_bb(self, measures):
+        image = self.image.copy()
+        draw = ImageDraw.Draw(image)
+        for measure in measures:
+            color = ImageColor.getrgb(self.colors[measure.system % len(self.colors)])
+            draw.rectangle(((measure.bb[0], measure.bb[1]), (measure.bb[2], measure.bb[3])), outline=color, width=5)
         del draw
         return image

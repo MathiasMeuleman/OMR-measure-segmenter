@@ -2,7 +2,7 @@ from PIL import Image
 from tqdm import tqdm
 
 from score_analysis.measure_extractor import MeasureExtractor, filter_pages
-from util.dirs import get_musicdata_scores, page_sort_key
+from util.dirs import get_musicdata_scores, page_sort_key, musicdata_dir
 
 
 def list_filtered_page_differences():
@@ -19,12 +19,15 @@ def list_filtered_page_differences():
 
 
 if __name__ == '__main__':
-    list_filtered_page_differences()
-    musicdata_paths = get_musicdata_scores()
+    # list_filtered_page_differences()
+    # musicdata_paths = get_musicdata_scores()[38:]
+    musicdata_paths = [musicdata_dir / 'bruckner_symphony_5']
     for part in musicdata_paths:
         measures_path = part / 'measures'
+        barlines_path = part / 'barlines'
         for page in tqdm(filter_pages(part)):
             measure_images_path = part / 'measure_images' / page.stem
             measure_images_path.mkdir(parents=True, exist_ok=True)
             measure_path = measures_path / (page.stem + '.json')
-            MeasureExtractor(Image.open(page), measure_path, measure_images_path).extract_measures()
+            barline_path = barlines_path / (page.stem + '.json')
+            MeasureExtractor(Image.open(page), measure_path, measure_images_path, barline_path).extract_measures()
